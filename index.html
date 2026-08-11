@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <meta name="theme-color" content="#0f0f23">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="APA Scorekeeper">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icon-192.png" type="image/png">
+  <title>APA Scorekeeper</title>
+  <style>
+    :root {
+      --bg: #0f0f23;
+      --surface: #1a1a2e;
+      --surface2: #252542;
+      --primary: #e94560;
+      --primary-dark: #c73650;
+      --accent: #0f3460;
+      --accent2: #16213e;
+      --text: #ffffff;
+      --text-dim: #a0a0b0;
+      --green: #4ade80;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --blue: #60a5fa;
+      --radius: 12px;
+      --shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overscroll-behavior: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    /* App layout */
+    #app { max-width: 600px; margin: 0 auto; min-height: 100vh; padding-bottom: 80px; }
+    .header {
+      background: var(--surface);
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      border-bottom: 1px solid var(--surface2);
+    }
+    .header h1 { font-size: 1.2rem; font-weight: 700; }
+    .header .logo { font-size: 1.5rem; }
+    /* Bottom nav */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 600px;
+      background: var(--surface);
+      display: flex;
+      justify-content: space-around;
+      padding: 8px 0;
+      border-top: 1px solid var(--surface2);
+      z-index: 100;
+    }
+    .nav-btn {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 0.7rem;
+      padding: 8px 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      transition: color 0.2s;
+    }
+    .nav-btn.active { color: var(--primary); }
+    .nav-btn:active { color: var(--primary); }
+    .nav-icon { font-size: 1.4rem; }
+    /* Views */
+    .view { display: none; padding: 16px; }
+    .view.active { display: block; }
+    /* Cards */
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: var(--shadow);
+    }
+    .card-tap { cursor: pointer; }
+    .card-tap:active { background: var(--surface2); }
+    /* Forms */
+    .form-group { margin-bottom: 14px; }
+    label { display: block; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
+    input, select, textarea {
+      width: 100%;
+      padding: 12px;
+      background: var(--surface2);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--primary); }
+    select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a0a0b0' d='M6 9L1 4h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn:active { opacity: 0.8; }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-secondary { background: var(--surface2); color: var(--text); }
+    .btn-success { background: var(--green); color: #064e3b; }
+    .btn-danger { background: var(--red); color: #450a0a; }
+    .btn:disabled { opacity: 0.5; }
+    .btn-row { display: flex; gap: 8px; }
+    .btn-row .btn { flex: 1; }
+    /* Scoreboard */
+    .scoreboard {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .score-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+    }
+    .score-side { flex: 1; text-align: center; }
+    .score-name { font-size: 0.9rem; color: var(--text-dim); margin-bottom: 4px; }
+    .score-value { font-size: 2.5rem; font-weight: 800; }
+    .score-value .target { font-size: 1rem; color: var(--text-dim); font-weight: 400; }
+    .score-divider { width: 1px; background: var(--surface2); margin: 0 8px; }
+    .score-vs { font-size: 0.8rem; color: var(--text-dim); text-align: center; padding: 4px; }
+    /* Rack list */
+    .rack-item {
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .rack-item:active { background: var(--surface2); }
+    .rack-number { font-weight: 700; font-size: 1.1rem; }
+    .rack-result { font-size: 0.9rem; color: var(--text-dim); }
+    /* Ball grid (9-ball) */
+    .ball-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0; }
+    .ball-btn {
+      aspect-ratio: 1;
+      border-radius: 50%;
+      border: 3px solid;
+      font-size: 1rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    .ball-btn:active { transform: scale(0.9); }
+    .ball-1 { border-color: #fbbf24; background: #fbbf24; color: #000; }
+    .ball-2 { border-color: #3b82f6; background: #3b82f6; color: #fff; }
+    .ball-3 { border-color: #ef4444; background: #ef4444; color: #fff; }
+    .ball-4 { border-color: #9333ea; background: #9333ea; color: #fff; }
+    .ball-5 { border-color: #f97316; background: #f97316; color: #fff; }
+    .ball-6 { border-color: #059669; background: #059669; color: #fff; }
+    .ball-7 { border-color: #92400e; background: #92400e; color: #fff; }
+    .ball-8 { border-color: #1a1a1a; background: #1a1a1a; color: #fff; }
+    .ball-9 { border-color: #e5e5e5; background: #e5e5e5; color: #000; }
+    .ball-pocketed { opacity: 0.3; }
+    .ball-dead { background: #444 !important; color: #888 !important; border-color: #444 !important; text-decoration: line-through; }
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 200;
+      justify-content: center;
+      align-items: flex-end;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--surface);
+      width: 100%;
+      max-width: 600px;
+      border-radius: 16px 16px 0 0;
+      padding: 20px;
+      max-height: 85vh;
+      overflow-y: auto;
+    }
+    .modal-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 16px; }
+    .modal-close { float: right; cursor: pointer; font-size: 1.5rem; color: var(--text-dim); }
+    /* Badges */
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-8ball { background: #1a1a1a; color: #fff; }
+    .badge-9ball { background: #e5e5e5; color: #000; }
+    .badge-senior { background: var(--yellow); color: #000; }
+    .badge-completed { background: var(--green); color: #064e3b; }
+    .badge-in-progress { background: var(--blue); color: #000; }
+    .badge-setup { background: var(--surface2); color: var(--text-dim); }
+    /* Empty state */
+    .empty {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-dim);
+    }
+    .empty .icon { font-size: 3rem; margin-bottom: 12px; }
+    /* Utility */
+    .flex { display: flex; }
+    .flex-1 { flex: 1; }
+    .gap-8 { gap: 8px; }
+    .gap-12 { gap: 12px; }
+    .mt-8 { margin-top: 8px; }
+    .mt-16 { margin-top: 16px; }
+    .mb-8 { margin-bottom: 8px; }
+    .mb-16 { margin-bottom: 16px; }
+    .text-center { text-align: center; }
+    .text-dim { color: var(--text-dim); }
+    .text-sm { font-size: 0.85rem; }
+    .text-lg { font-size: 1.1rem; }
+    .font-bold { font-weight: 700; }
+    .hidden { display: none !important; }
+    .race-chart { font-size: 0.8rem; overflow-x: auto; }
+    .race-chart table { border-collapse: collapse; width: 100%; }
+    .race-chart th, .race-chart td { border: 1px solid var(--surface2); padding: 6px 8px; text-align: center; }
+    .race-chart th { background: var(--accent); }
+    .race-chart .highlight { background: var(--primary); color: white; }
+    .stat-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--surface2); }
+    .stat-label { color: var(--text-dim); }
+    .stat-value { font-weight: 600; }
+    .inning-tally { display: flex; gap: 2px; flex-wrap: wrap; margin: 8px 0; }
+    .inning-mark { width: 12px; height: 12px; border-radius: 50%; background: var(--primary); }
+    .section-title { font-size: 1rem; font-weight: 700; margin: 16px 0 8px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+    .player-select { display: flex; align-items: center; gap: 8px; }
+    .player-dot { width: 12px; height: 12px; border-radius: 50; flex-shrink: 0; }
+    .home-side { border-left: 4px solid var(--green); }
+    .away-side { border-left: 4px solid var(--red); }
+    .toast {
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface2);
+      color: var(--text);
+      padding: 12px 24px;
+      border-radius: 8px;
+      z-index: 300;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      max-width: 90%;
+      text-align: center;
+      font-size: 0.9rem;
+    }
+    /* ── Live scoring controls ── */
+    .live-scorer { background: var(--surface); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
+    .live-scorer .section-title { margin-top: 0; }
+    .stepper { display: flex; align-items: center; justify-content: center; gap: 12px; }
+    .stepper .step-btn {
+      width: 44px; height: 44px; border-radius: 50%; border: none;
+      background: var(--surface2); color: var(--text);
+      font-size: 1.5rem; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .stepper .step-btn:active { background: var(--primary); }
+    .stepper .step-count { font-size: 1.8rem; font-weight: 800; min-width: 40px; text-align: center; }
+    .scorer-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 0; border-bottom: 1px solid var(--surface2);
+    }
+    .scorer-row:last-child { border-bottom: none; }
+    .scorer-name { font-weight: 600; font-size: 0.95rem; flex: 1; }
+    .scorer-actions { display: flex; gap: 6px; }
+    .chip-btn {
+      border: none; border-radius: 8px; padding: 8px 10px;
+      background: var(--surface2); color: var(--text);
+      font-size: 0.8rem; font-weight: 600; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      min-width: 64px;
+    }
+    .chip-btn:active { background: var(--primary); }
+    .chip-btn .chip-num { font-size: 1rem; font-weight: 800; }
+    .chip-btn.toggled { background: var(--primary); color: white; }
+    .chip-btn.toggled .chip-num { color: white; }
+    .chip-btn.disabled { opacity: 0.35; }
+    /* 9-ball scorer toggle */
+    .scorer-toggle { display: flex; gap: 6px; margin-bottom: 10px; }
+    .scorer-toggle .btn { flex: 1; padding: 10px; font-size: 0.85rem; }
+    .scorer-toggle .btn.active { background: var(--primary); color: white; }
+    /* Small balls for 9-ball live entry */
+    .ball-grid-sm { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; margin: 8px 0; }
+    .ball-sm {
+      aspect-ratio: 1; border-radius: 50%; border: 2px solid;
+      font-size: 0.72rem; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: transform 0.1s; position: relative;
+    }
+    .ball-sm:active { transform: scale(0.88); }
+    .ball-sm .ball-owner { position: absolute; bottom: -2px; right: -2px; font-size: 0.6rem; background: var(--bg); border-radius: 50%; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; }
+    .ball-sm.picked-home { box-shadow: 0 0 0 3px var(--green); }
+    .ball-sm.picked-away { box-shadow: 0 0 0 3px var(--red); }
+    .ball-sm.picked-dead { opacity: 0.35; }
+    .ball-sm.picked-dead::after { content: '💀'; position: absolute; font-size: 0.6rem; }
+    /* Extra-small balls for 8-ball live entry (15 balls) */
+    .ball-grid-15 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin: 8px 0; }
+    .ball-xs {
+      aspect-ratio: 1; border-radius: 50%; border: 2px solid;
+      font-size: 0.65rem; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: transform 0.1s; position: relative;
+    }
+    .ball-xs:active { transform: scale(0.88); }
+    .ball-xs .ball-owner { position: absolute; bottom: -2px; right: -2px; font-size: 0.55rem; background: var(--bg); border-radius: 50%; width: 12px; height: 12px; display: flex; align-items: center; justify-content: center; }
+    .ball-xs.picked-home { box-shadow: 0 0 0 3px var(--green); }
+    .ball-xs.picked-away { box-shadow: 0 0 0 3px var(--red); }
+    .ball-xs.picked-dead { opacity: 0.35; }
+    .ball-xs.picked-dead::after { content: '💀'; position: absolute; font-size: 0.5rem; }
+    /* End rack modal end-type buttons */
+    .endtype-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .endtype-btn {
+      border: 2px solid var(--surface2); background: var(--surface2);
+      color: var(--text); border-radius: 10px; padding: 14px 10px;
+      font-size: 0.85rem; font-weight: 600; cursor: pointer; text-align: center;
+    }
+    .endtype-btn:active { background: var(--accent); border-color: var(--primary); }
+    .endtype-btn.selected { background: var(--primary); border-color: var(--primary); color: white; }
+    /* Running total bar for 9-ball */
+    .live-total {
+      display: flex; justify-content: space-between; align-items: center;
+      background: var(--surface2); border-radius: 8px; padding: 10px 14px; margin-top: 10px;
+    }
+    .live-total .side { font-size: 0.85rem; }
+    .live-total .side .pts { font-weight: 800; font-size: 1.1rem; }
+    .live-total .side.home { color: var(--green); }
+    .live-total .side.away { color: var(--red); }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <div class="header">
+      <span class="logo">🎱</span>
+      <h1 id="page-title">APA Scorekeeper</h1>
+      <span class="logo" id="offline-indicator">📥</span>
+    </div>
+
+    <!-- ─── Views ─── -->
+
+    <!-- Home / Matches view -->
+    <div class="view active" id="view-home">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <h2 style="font-size:1.1rem;">Matches</h2>
+          <button class="btn btn-primary" style="width:auto;padding:10px 20px;" onclick="ui.showNewMatch()">+ New Match</button>
+        </div>
+      </div>
+      <div id="match-list"></div>
+    </div>
+
+    <!-- Teams view -->
+    <div class="view" id="view-teams">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <h2 style="font-size:1.1rem;">Teams & Players</h2>
+          <button class="btn btn-primary" style="width:auto;padding:10px 20px;" onclick="ui.showNewTeam()">+ New Team</button>
+        </div>
+      </div>
+      <div id="team-list"></div>
+    </div>
+
+    <!-- Match view (active scoring) -->
+    <div class="view" id="view-match">
+      <div id="match-content"></div>
+    </div>
+
+    <!-- Settings view -->
+    <div class="view" id="view-settings">
+      <div class="card">
+        <h2 style="font-size:1.1rem;margin-bottom:12px;">Settings</h2>
+        <div class="form-group">
+          <label>App Theme</label>
+          <select id="setting-theme">
+            <option value="dark">Dark (Default)</option>
+            <option value="dark-blue">Dark Blue</option>
+          </select>
+        </div>
+      </div>
+      <div class="card">
+        <h2 style="font-size:1.1rem;margin-bottom:12px;">Data Management</h2>
+        <p class="text-sm text-dim mb-16">Your data is stored locally on your phone. Export a backup or import to restore.</p>
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="ui.exportData()">Export Backup</button>
+          <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">Import Backup</button>
+        </div>
+        <input type="file" id="import-file" accept=".json" style="display:none" onchange="ui.importData(event)">
+      </div>
+      <div class="card">
+        <h2 style="font-size:1.1rem;margin-bottom:12px;">About</h2>
+        <p class="text-sm text-dim">APA Scorekeeper v1.0</p>
+        <p class="text-sm text-dim mt-8">Offline scoring for APA 8-ball & 9-ball league matches.</p>
+        <p class="text-sm text-dim mt-8">Based on the APA Equalizer® handicap system. Not affiliated with or endorsed by the American Poolplayers Association.</p>
+        <p class="text-sm text-dim mt-8">All data stored locally on your device. Works fully offline.</p>
+      </div>
+    </div>
+
+    <!-- Race chart view -->
+    <div class="view" id="view-race-chart">
+      <div id="race-chart-content"></div>
+    </div>
+
+    <!-- Bottom Nav -->
+    <div class="bottom-nav">
+      <button class="nav-btn active" data-view="home" onclick="ui.switchView('home')">
+        <span class="nav-icon">🎮</span><span>Matches</span>
+      </button>
+      <button class="nav-btn" data-view="teams" onclick="ui.switchView('teams')">
+        <span class="nav-icon">👥</span><span>Teams</span>
+      </button>
+      <button class="nav-btn" data-view="race-chart" onclick="ui.switchView('race-chart')">
+        <span class="nav-icon">📊</span><span>Race Chart</span>
+      </button>
+      <button class="nav-btn" data-view="settings" onclick="ui.switchView('settings')">
+        <span class="nav-icon">⚙️</span><span>Settings</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" id="modal-content"></div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast" style="display:none;"></div>
+
+  <script src="./js/scoring.js"></script>
+  <script src="./js/db.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>
