@@ -1,7 +1,7 @@
 APA Scorekeeper - Offline Pool League Scoring App
 ===================================================
 
-Version: 1.0
+Version: 1.1
 By: Built for zappb44
 
 WHAT THIS APP DOES
@@ -22,13 +22,32 @@ FEATURES
   - 8-ball end types (Standard, 8 on Break, Break & Run, Early 8, Scratch on 8, Wrong Pocket)
   - 9-ball ball-by-ball entry (tap balls to assign to home/away, mark dead balls)
   - 9-ball end types (Standard, 9 on Snap, Break & Run, End Early)
-- Undo last rack
-- Forfeit match
+- Undo last rack (with a summary of exactly what is deleted)
+- Forfeit match (APA values it at 2 match points, 3 in playoffs)
 - Match summary with full stats
 - Export/import data backup (JSON)
 - Race chart reference (8-ball and 9-ball)
 - Works offline (PWA with service worker)
 - Installable to home screen
+
+NEW IN 1.1
+----------
+- 8-ball 3-Point Scoring System: 3-0 shutout, 2-1 when the loser reaches
+  the hill, 2-0 otherwise. Shown on the summary and in the match list.
+- Sudden Death: time-limit procedure. In 8-ball the next rack is worth 2
+  points and the one after it 1; in 9-ball every ball counts double.
+- Table size now matches the official app: 7-ft coin-op, 8-ft coin-op,
+  8-ft regulation, 9-ft regulation.
+- Time-outs follow the Team Manual: 1 per game for SL4 and up, 2 per game
+  for SL2/SL3.
+- 9-ball rule fixes: the 9-ball can no longer be marked dead (it is
+  spotted), a stalemate kills the balls on the table, and points above a
+  player's target are not recorded.
+- Text size setting (small / medium / large / extra large).
+- Screen stays awake while a match is being scored (wake lock).
+- Editing a completed rack no longer lets you add racks to a finished match.
+- Unit tests for the scoring engine: node tests/scoring.test.js
+- Feature map vs the official APA app: docs/features.md
 
 HOW TO INSTALL ON ANDROID
 ---------------------------

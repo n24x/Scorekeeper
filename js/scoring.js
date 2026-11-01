@@ -36,8 +36,29 @@ const NINE_BALL_Skill_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const EIGHT_BALL_SENIOR = [6, 7];
 const NINE_BALL_SENIOR = [6, 7, 8, 9];
 
-// Max timeouts per rack (1 per player per rack in 8-ball; 1 per player per rack in 9-ball)
-const MAX_TIMEOUTS_PER_RACK = 1;
+// Time-outs (called "coachings" in the Team Manual) are per GAME, not per match.
+// APA Team Manual: players SL4 and up get one coaching per game; SL2, SL3 and
+// non-rated players get two per game. The official app enforces the same limit.
+const MAX_TIMEOUTS_PER_RACK = 1; // legacy default, kept for older saved matches
+
+function maxTimeoutsPerRack(skillLevel) {
+  return (Number(skillLevel) >= 4) ? 1 : 2;
+}
+
+// Table sizes offered by the official APA Scorekeeper app.
+const TABLE_SIZE_LABELS = {
+  'bar-box': '7-foot Coin-Op',        // legacy key used by v1.0 matches
+  'coin-7': '7-foot Coin-Op',
+  'coin-8': '8-foot Coin-Op',
+  'regulation-8': '8-foot Regulation', // legacy key used by v1.0 matches
+  'reg-8': '8-foot Regulation',
+  'regulation-9': '9-foot Regulation', // legacy key used by v1.0 matches
+  'reg-9': '9-foot Regulation'
+};
+
+function getTableSizeLabel(size) {
+  return TABLE_SIZE_LABELS[size] || 'Unspecified';
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // Rack End Types (from APK: RackEndType enum)
@@ -134,11 +155,18 @@ function createMatch(type, homeTeam, awayTeam, homePlayer, awayPlayer) {
     status: 'setup',          // setup → in_progress → completed → submitted
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    tableSize: null,          // 'bar-box' (coin) | 'regulation-8' | 'regulation-9'
+    tableSize: null,          // 'coin-7' | 'coin-8' | 'reg-8' | 'reg-9'
     completedAt: null,
     forfeit: null,            // null | 'home' | 'away' | 'double'
+    forfeitPoints: null,      // { home, away } when the match ended by forfeit
     winner: null,              // 'home' | 'away' | null
     finalScore: null,          // { home, away }
+    // Sudden Death (APA 8-ball: racks worth 2 then 1 team point; 9-ball: all
+    // ball points doubled). See enableSuddenDeath().
+    suddenDeath: false,
+    suddenDeathAt: null,
+    suddenDeathRacks: 0,
+    suddenDeathFromRack: null,
     notes: '',
   };
 
@@ -180,6 +208,7 @@ function createRack(match, rackNumber) {
     endType: null,         // RACK_END_TYPES value
     winner: null,           // 'home' | 'away' | null
     endedAt: null,
+    sdPoints: null,         // 8-ball Sudden Death: 2 for the first SD rack, 1 after
     // 9-ball: which balls were pocketed by whom
     balls: [],              // [{ number, pocketedBy: 'home'|'away', dead: false }]
     // 8-ball live picker
@@ -221,34 +250,61 @@ function endRack(match, rack, endType, winner) {
   rack.endedAt = Date.now();
   match.updatedAt = Date.now();
 
-  // Update match-level scores
   if (match.format === '8-ball') {
-    if (winner === 'home') {
-      // count home racks won at match level
-    } else if (winner === 'away') {
-      // count away racks won at match level
-    }
+    // Sudden Death in 8-ball is scored in team points, not games: the first
+    // SD rack is worth 2 points, every later SD rack is worth 1.
+    // (APA Sudden Death Guidelines, 8-Ball section.) Recalculate from the rack
+    // list so editing an old rack cannot inflate the SD total.
+    if (match.suddenDeath) recalcSuddenDeath(match);
   } else {
-    // 9-ball: add ball points from this rack
-    const homePts = rack.balls.filter(b => b.pocketedBy === 'home' && !b.dead).length
-      + (rack.balls.filter(b => b.pocketedBy === 'home' && b.number === 9 && !b.dead).length); // extra point for 9-ball
-    const awayPts = rack.balls.filter(b => b.pocketedBy === 'away' && !b.dead).length
-      + (rack.balls.filter(b => b.pocketedBy === 'away' && b.number === 9 && !b.dead).length);
-    // Actually, balls 1-8 = 1pt, 9-ball = 2pts. Let's recalc properly.
-    rack.homeBallPoints = rack.balls.filter(b => b.pocketedBy === 'home' && !b.dead)
-      .reduce((sum, b) => sum + (b.number === 9 ? 2 : 1), 0);
-    rack.awayBallPoints = rack.balls.filter(b => b.pocketedBy === 'away' && !b.dead)
-      .reduce((sum, b) => sum + (b.number === 9 ? 2 : 1), 0);
+    // 9-ball: balls 1-8 are worth 1 point, the 9-ball is worth 2.
+    // In Sudden Death every ball is worth DOUBLE points.
+    const multiplier = match.suddenDeath ? 2 : 1;
+
+    // A stalemate returns the balls on the table as dead balls: nobody is
+    // credited for them (Scoresheet instructions, "Dead Balls").
+    if (endType === 'STALEMATE') {
+      rack.balls.forEach(b => { b.dead = true; b.pocketedBy = null; });
+    }
+
+    // The 9-ball is never a dead ball - it is spotted (same source).
+    const nine = rack.balls.find(b => b.number === 9);
+    if (nine && nine.dead) { nine.dead = false; nine.pocketedBy = null; }
+
+    rack.homeBallPoints = rack.balls
+      .filter(b => b.pocketedBy === 'home' && !b.dead)
+      .reduce((sum, b) => sum + (b.number === 9 ? 2 : 1), 0) * multiplier;
+    rack.awayBallPoints = rack.balls
+      .filter(b => b.pocketedBy === 'away' && !b.dead)
+      .reduce((sum, b) => sum + (b.number === 9 ? 2 : 1), 0) * multiplier;
     rack.deadBalls = rack.balls.filter(b => b.dead).length;
   }
 
-  // Check if match is over
+  // Recompute the result from the full rack list. Editing an earlier rack has
+  // to be able to un-complete and re-complete the match.
+  match.status = match.racks.length ? 'in_progress' : 'setup';
+  match.winner = null;
+  match.finalScore = null;
+  match.completedAt = null;
   checkMatchOver(match);
 }
 
 /** Check if the match is over based on format */
 function checkMatchOver(match) {
   if (match.format === '8-ball') {
+    // Sudden Death replaces the games race: the first SD rack is worth 2
+    // points and settles the individual match (tie-break credit goes to its
+    // winner), so the match ends as soon as that rack is decided.
+    if (match.suddenDeath) {
+      const sd = getSuddenDeathPoints(match);
+      if (sd.home !== sd.away) {
+        match.status = 'completed';
+        match.winner = sd.home > sd.away ? 'home' : 'away';
+        match.finalScore = sd;
+        match.completedAt = Date.now();
+      }
+      return;
+    }
     let homeWins = 0, awayWins = 0;
     match.racks.forEach(r => {
       if (r.winner === 'home') homeWins++;
@@ -272,15 +328,17 @@ function checkMatchOver(match) {
       homeTotal += r.homeBallPoints || 0;
       awayTotal += r.awayBallPoints || 0;
     });
+    // "If a player earns more points than required to win, do not mark the
+    // excess points" - cap the recorded score at each player's target.
     if (homeTotal >= match.homeRaceTo) {
       match.status = 'completed';
       match.winner = 'home';
-      match.finalScore = { home: homeTotal, away: awayTotal };
+      match.finalScore = { home: match.homeRaceTo, away: Math.min(awayTotal, match.awayRaceTo - 1) };
       match.completedAt = Date.now();
     } else if (awayTotal >= match.awayRaceTo) {
       match.status = 'completed';
       match.winner = 'away';
-      match.finalScore = { home: homeTotal, away: awayTotal };
+      match.finalScore = { home: Math.min(homeTotal, match.homeRaceTo - 1), away: match.awayRaceTo };
       match.completedAt = Date.now();
     }
   }
@@ -336,29 +394,125 @@ function getTotalTimeouts(match, side) {
     sum + (side === 'home' ? (r.homeTimeouts || 0) : (r.awayTimeouts || 0)), 0);
 }
 
-/** Forfeit a match */
-function forfeitMatch(match, side) {
+/** Forfeit a match.
+ *  An individual forfeit is worth TWO match points in regular 8-ball League
+ *  play (three in Playoffs/Higher Level Tournaments) - Team Manual, rule 4.
+ *  The forfeiting player does not get a fabricated race-to score. */
+function forfeitMatch(match, side, options) {
+  const playoff = !!(options && options.playoff);
+  const forfeitValue = playoff ? 3 : 2;
+
   match.forfeit = side;
   match.status = 'completed';
   match.completedAt = Date.now();
+  match.finalScore = null;   // a forfeit is not a played-out score
+
   if (side === 'home') {
-    // Home forfeits → away wins
     match.winner = 'away';
-    match.finalScore = { home: 0, away: match.format === '8-ball' ? match.awayRaceTo : match.awayRaceTo };
+    match.forfeitPoints = { home: 0, away: forfeitValue };
   } else if (side === 'away') {
     match.winner = 'home';
-    match.finalScore = { home: match.format === '8-ball' ? match.homeRaceTo : match.homeRaceTo, away: 0 };
+    match.forfeitPoints = { home: forfeitValue, away: 0 };
   } else {
-    // Double forfeit
     match.winner = null;
-    match.finalScore = { home: 0, away: 0 };
+    match.forfeitPoints = { home: 0, away: 0 };
   }
+}
+
+/** Sudden Death: 8-ball racks are worth team points (2 then 1); 9-ball
+ *  doubles every ball. Enabling it mid-match keeps the racks already played. */
+function enableSuddenDeath(match) {
+  if (match.suddenDeath) return match;
+  match.suddenDeath = true;
+  match.suddenDeathAt = Date.now();
+  match.suddenDeathRacks = 0;
+  // A rack already in progress becomes the first Sudden Death rack.
+  const last = match.racks[match.racks.length - 1];
+  match.suddenDeathFromRack = (last && !last.winner) ? match.racks.length - 1 : match.racks.length;
+  match.updatedAt = Date.now();
+  return match;
+}
+
+/** Re-number the Sudden Death racks (2 points for the first one, 1 after).
+ *  Safe to call repeatedly; it is derived purely from the rack list. */
+function recalcSuddenDeath(match) {
+  const from = (typeof match.suddenDeathFromRack === 'number')
+    ? match.suddenDeathFromRack
+    : 0;
+  let n = 0;
+  match.racks.forEach((r, i) => {
+    if (i < from || !r.winner) { r.sdPoints = null; return; }
+    n++;
+    r.sdPoints = (n === 1) ? 2 : 1;
+  });
+  match.suddenDeathRacks = n;
+}
+
+/** Points won so far in 8-ball Sudden Death racks. */
+function getSuddenDeathPoints(match) {
+  const out = { home: 0, away: 0 };
+  match.racks.forEach(r => {
+    if (r.sdPoints && r.winner === 'home') out.home += r.sdPoints;
+    if (r.sdPoints && r.winner === 'away') out.away += r.sdPoints;
+  });
+  return out;
+}
+
+/** Value of the next 8-ball Sudden Death rack (2 for the first, then 1). */
+function nextSuddenDeathRackValue(match) {
+  return (match.suddenDeathRacks || 0) === 0 ? 2 : 1;
+}
+
+/** APA 8-Ball 3-Point Scoring System (introduced Spring 2014).
+ *  Every individual match is worth 3 points:
+ *   - shutout win (loser won no games) ............. 3-0
+ *   - win where the loser reached the hill ......... 2-1
+ *   - win where the loser won games but no hill .... 2-0
+ *  Returns { home, away } match points, or null if not applicable. */
+function get8BallMatchPoints(match) {
+  if (match.format !== '8-ball' || match.status !== 'completed') return null;
+  if (match.forfeit || match.suddenDeath) return null; // forfeits / SD use their own points
+
+  let homeGames = 0, awayGames = 0;
+  match.racks.forEach(r => {
+    if (r.winner === 'home') homeGames++;
+    else if (r.winner === 'away') awayGames++;
+  });
+
+  if (!match.winner) return null;
+
+  const homeWon = match.winner === 'home';
+  const loserGames = homeWon ? awayGames : homeGames;
+  const loserTarget = homeWon ? match.awayRaceTo : match.homeRaceTo;
+
+  let winnerPts, loserPts;
+  if (loserGames === 0) {
+    winnerPts = 3; loserPts = 0;              // shutout
+  } else if (loserGames === loserTarget - 1) {
+    winnerPts = 2; loserPts = 1;              // loser reached the hill
+  } else {
+    winnerPts = 2; loserPts = 0;              // loser won games, never reached the hill
+  }
+
+  return homeWon ? { home: winnerPts, away: loserPts } : { home: loserPts, away: winnerPts };
+}
+
+/** Match points for any format. Returns null when the app cannot compute them
+ *  honestly (9-ball match points need APA's "Score of Match" chart). */
+function getMatchPoints(match) {
+  if (match.status !== 'completed') return null;
+  if (match.forfeit) return match.forfeitPoints || null;
+  if (match.format === '8-ball') {
+    return match.suddenDeath ? getSuddenDeathPoints(match) : get8BallMatchPoints(match);
+  }
+  return null;
 }
 
 /** Undo the last rack */
 function undoLastRack(match) {
   if (match.racks.length === 0) return null;
   const removed = match.racks.pop();
+  if (match.suddenDeath) recalcSuddenDeath(match);
   match.status = match.racks.length > 0 ? 'in_progress' : 'setup';
   match.winner = null;
   match.finalScore = null;
@@ -389,6 +543,10 @@ function generateMatchSummary(match) {
 
   return {
     format: match.format,
+    tableSize: getTableSizeLabel(match.tableSize),
+    suddenDeath: !!match.suddenDeath,
+    matchPoints: getMatchPoints(match),
+    forfeitPoints: match.forfeitPoints || null,
     homePlayer: match.homePlayer.name,
     awayPlayer: match.awayPlayer.name,
     homeTeam: match.homeTeam,
@@ -412,6 +570,7 @@ function generateMatchSummary(match) {
       number: r.rackNumber,
       winner: r.winner,
       endType: r.endType,
+      sdPoints: r.sdPoints || null,
       innings: r.innings,
       homeBallPoints: r.homeBallPoints,
       awayBallPoints: r.awayBallPoints,
@@ -432,6 +591,9 @@ if (typeof module !== 'undefined') module.exports = {
   NINE_BALL_POINTS_TO_WIN,
   RACK_END_TYPES,
   RACK_END_LABELS,
+  TABLE_SIZE_LABELS,
+  getTableSizeLabel,
+  maxTimeoutsPerRack,
   get8BallRace,
   get9BallPoints,
   isSeniorSkillLevel,
@@ -449,6 +611,11 @@ if (typeof module !== 'undefined') module.exports = {
   getTotalDefensiveShots,
   getTotalTimeouts,
   forfeitMatch,
+  enableSuddenDeath,
+  getSuddenDeathPoints,
+  nextSuddenDeathRackValue,
+  get8BallMatchPoints,
+  getMatchPoints,
   undoLastRack,
   generateMatchSummary
 };

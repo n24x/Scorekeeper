@@ -61,6 +61,7 @@ const ui = {
     if (view === 'home') this.refreshMatchList();
     if (view === 'teams') this.refreshTeamList();
     if (view === 'race-chart') this.renderRaceChart();
+    if (view !== 'match') this.keepAwake(false);
   },
 
   // ── Matches ──
@@ -78,11 +79,14 @@ const ui = {
       const statusBadge = m.status === 'completed' ? 'badge-completed">Completed' : m.status === 'in_progress' ? 'badge-in-progress">In Progress' : 'badge-setup">Setup';
       const fmtBadge = m.format === '8-ball' ? 'badge-8ball">8-Ball' : 'badge-9ball">9-Ball';
       const winnerText = m.winner ? `${m.winner === 'home' ? esc(m.homePlayer.name) : esc(m.awayPlayer.name)} won` : '';
+      const mp = m.status === 'completed' ? getMatchPoints(m) : null;
+      const mpBadge = mp ? `<span class="badge badge-mp">MP ${mp.home}-${mp.away}</span>` : '';
       html += `<div class="card card-tap" onclick="ui.openMatch('${m.id}')">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div>
             <span class="badge ${fmtBadge}</span>
             <span class="badge ${statusBadge}</span>
+            ${mpBadge}
           </div>
           <span class="text-sm text-dim">${fmtDate(m.updatedAt)}</span>
         </div>
@@ -124,7 +128,13 @@ const ui = {
     }
 
     const formatOpts = '<option value="8-ball">8-Ball</option><option value="9-ball">9-Ball</option>';
-    const tableOpts = '<option value="bar-box">Bar Box (7ft)</option><option value="regulation-8">Regulation (8ft)</option><option value="regulation-9">Regulation (9ft)</option>';
+    // Same four choices the official APA Scorekeeper app offers.
+    const tableOpts = [
+      ['coin-7', '7-foot Coin-Op'],
+      ['coin-8', '8-foot Coin-Op'],
+      ['reg-8', '8-foot Regulation'],
+      ['reg-9', '9-foot Regulation']
+    ].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
 
     // Build player dropdowns grouped by team
     let playerOpts = '<option value="">Select player...</option>';
@@ -253,6 +263,18 @@ const ui = {
       </div>
     `;
 
+    // Sudden Death banner (APA time-limit procedure)
+    if (m.suddenDeath) {
+      const sd = getSuddenDeathPoints(m);
+      html += `<div class="card sd-banner">
+        <div class="font-bold" style="color:var(--yellow);">⚡ SUDDEN DEATH</div>
+        ${m.format === '8-ball'
+          ? `<div class="text-sm mt-8">Racks are worth team points: <b>2</b> for the first, <b>1</b> after that.
+             ${sd.home || sd.away ? `<br>SD points — ${esc(m.homePlayer.name)}: <b>${sd.home}</b> · ${esc(m.awayPlayer.name)}: <b>${sd.away}</b>` : ''}</div>`
+          : `<div class="text-sm mt-8">Every ball counts <b>double</b>, including the 9-ball.</div>`}
+      </div>`;
+    }
+
     // Action buttons based on match status
     if (m.status === 'setup') {
       html += `
@@ -309,8 +331,8 @@ const ui = {
           <div class="scorer-row">
             <span class="scorer-name">🏠 ${esc(m.homePlayer.name)}</span>
             <div class="scorer-actions">
-              <button class="chip-btn ${rack.homeTimeouts >= 1 ? 'toggled disabled' : ''}" onclick="ui.toggleTimeout('home')">
-                <span>⏱ Timeout</span><span class="chip-num" id="live-hto">${rack.homeTimeouts || 0}</span>
+              <button class="chip-btn ${rack.homeTimeouts > 0 ? 'toggled' : ''}" onclick="ui.toggleTimeout('home')">
+                <span>⏱ Timeout</span><span class="chip-num" id="live-hto">${rack.homeTimeouts || 0}/${maxTimeoutsPerRack(m.homePlayer.skillLevel)}</span>
               </button>
               <button class="chip-btn" onclick="ui.adjustDefensive('home', 1)">
                 <span>🛡 Defensive</span><span class="chip-num" id="live-hdef">${rack.homeDefensiveShots || 0}</span>
@@ -320,8 +342,8 @@ const ui = {
           <div class="scorer-row">
             <span class="scorer-name">👥 ${esc(m.awayPlayer.name)}</span>
             <div class="scorer-actions">
-              <button class="chip-btn ${rack.awayTimeouts >= 1 ? 'toggled disabled' : ''}" onclick="ui.toggleTimeout('away')">
-                <span>⏱ Timeout</span><span class="chip-num" id="live-ato">${rack.awayTimeouts || 0}</span>
+              <button class="chip-btn ${rack.awayTimeouts > 0 ? 'toggled' : ''}" onclick="ui.toggleTimeout('away')">
+                <span>⏱ Timeout</span><span class="chip-num" id="live-ato">${rack.awayTimeouts || 0}/${maxTimeoutsPerRack(m.awayPlayer.skillLevel)}</span>
               </button>
               <button class="chip-btn" onclick="ui.adjustDefensive('away', 1)">
                 <span>🛡 Defensive</span><span class="chip-num" id="live-adef">${rack.awayDefensiveShots || 0}</span>
@@ -416,6 +438,15 @@ const ui = {
         }
       }
 
+      // Sudden Death control (time limit hit before the match finished)
+      if (!m.suddenDeath) {
+        html += `
+        <div class="mt-16">
+          <button class="btn btn-secondary" onclick="ui.startSuddenDeath()">⚡ Start Sudden Death (time limit)</button>
+          <p class="text-sm text-dim text-center mt-8">8-ball: next rack worth 2 points, then 1. 9-ball: all ball points doubled.</p>
+        </div>`;
+      }
+
       // Action buttons
       html += `
         <div class="mt-16">
@@ -436,11 +467,22 @@ const ui = {
           <div class="text-center" style="font-size:1.5rem;font-weight:800;color:var(--green);">
             ${m.winner ? esc(m.winner === 'home' ? m.homePlayer.name : m.awayPlayer.name) + ' Wins! 🏆' : 'Double Forfeit'}
           </div>
-          <div class="text-center text-dim mt-8">Final: ${summary.homeScore} - ${summary.awayScore}</div>
+          <div class="text-center text-dim mt-8">
+            ${summary.forfeit
+              ? `Forfeit — ${summary.forfeit === 'double' ? 'both players' : (summary.forfeit === 'home' ? esc(m.homePlayer.name) : esc(m.awayPlayer.name))} forfeited`
+              : (m.suddenDeath && m.format === '8-ball' && m.finalScore
+                ? `Final: ${m.finalScore.home} - ${m.finalScore.away} (Sudden Death points)`
+                : `Final: ${summary.homeScore} - ${summary.awayScore}`)}
+          </div>
+          ${summary.matchPoints ? `<div class="text-center mt-8" style="color:var(--yellow);font-weight:700;">
+            Match Points: ${summary.matchPoints.home} - ${summary.matchPoints.away}${m.suddenDeath && !summary.forfeit ? ' (Sudden Death)' : ''}
+          </div>` : ''}
         </div>
         <div class="card">
           <div class="section-title">Summary</div>
           <div class="stat-row"><span class="stat-label">Format</span><span class="stat-value">${summary.format}</span></div>
+          <div class="stat-row"><span class="stat-label">Table</span><span class="stat-value">${summary.tableSize}</span></div>
+          ${summary.matchPoints ? `<div class="stat-row"><span class="stat-label">Match Points${m.format === '8-ball' && !summary.forfeit && !m.suddenDeath ? ' (3-Point System)' : ''}</span><span class="stat-value">${summary.matchPoints.home} - ${summary.matchPoints.away}</span></div>` : ''}
           <div class="stat-row"><span class="stat-label">Total Innings</span><span class="stat-value">${summary.totalInnings}</span></div>
           <div class="stat-row"><span class="stat-label">${summary.homePlayer} Defensive Shots</span><span class="stat-value">${summary.homeDefensiveShots}</span></div>
           <div class="stat-row"><span class="stat-label">${summary.awayPlayer} Defensive Shots</span><span class="stat-value">${summary.awayDefensiveShots}</span></div>
@@ -464,6 +506,9 @@ const ui = {
       if (m.format === '9-ball' && currentRack._balls !== undefined) this.renderLiveBallGrid();
       if (m.format === '8-ball' && currentRack._eightBalls !== undefined) this.renderLiveEightBallGrid();
     }
+
+    // Don't let the phone sleep mid-rack.
+    this.keepAwake(m.status === 'in_progress');
   },
 
   // ── Lag ──
@@ -489,18 +534,22 @@ const ui = {
     const rack = currentRack;
     if (!rack || rack.winner) return;
     const key = side === 'home' ? 'homeTimeouts' : 'awayTimeouts';
-    // Toggle between 0 and 1 (max 1 timeout per rack per player)
-    rack[key] = (rack[key] || 0) >= 1 ? 0 : 1;
+    // Per-game limit from the Team Manual: SL4+ = 1, SL2/SL3 (and non-rated) = 2.
+    const player = side === 'home' ? currentMatch.homePlayer : currentMatch.awayPlayer;
+    const max = maxTimeoutsPerRack(player.skillLevel);
+    const current = rack[key] || 0;
+    // Cycle 0 → 1 → … → max → 0
+    rack[key] = current >= max ? 0 : current + 1;
     const id = side === 'home' ? 'live-hto' : 'live-ato';
     const el = document.getElementById(id);
-    if (el) el.textContent = rack[key];
-    // Update button style
+    if (el) el.textContent = `${rack[key]}/${max}`;
     const btn = el && el.closest('.chip-btn');
     if (btn) {
-      btn.classList.toggle('toggled', rack[key] >= 1);
-      btn.classList.toggle('disabled', rack[key] >= 1);
+      btn.classList.toggle('toggled', rack[key] > 0);
+      btn.title = `${rack[key]} of ${max} time-out${max === 1 ? '' : 's'} used this game`;
     }
     await saveMatch(currentMatch);
+    if (current >= max) showToast(`Time-out cleared (limit ${max} per game)`);
   },
 
   async adjustDefensive(side, delta) {
@@ -531,6 +580,11 @@ const ui = {
     const rack = currentRack;
     if (!rack || rack.winner) return;
     const side = rack._scorerSide || 'home';
+    // APA: "The 9-ball is never a dead ball. It is spotted."
+    if (num === 9 && side === 'dead') {
+      showToast('The 9-ball is never dead — it gets spotted');
+      return;
+    }
     if (!rack._balls) rack._balls = [];
     const existing = rack._balls.find(b => b.number === num);
     // Toggle off: if ball exists and is assigned to the same side, remove it
@@ -642,6 +696,11 @@ const ui = {
   },
 
   async startNewRack() {
+    // A completed match must not accept more racks.
+    if (!currentMatch || currentMatch.status === 'completed') {
+      showToast('This match is already complete');
+      return;
+    }
     const rack = startRack(currentMatch);
     currentRack = rack;
     await saveMatch(currentMatch);
@@ -651,9 +710,19 @@ const ui = {
 
   endRackForm() {
     const m = currentMatch;
+    // Editing an already-scored rack reopens the match; starting a fresh rack
+    // on a finished match must not.
+    if (m.status === 'completed' && !this._editingRack) {
+      showToast('Match is complete — undo a rack first to change it');
+      return;
+    }
+    const wasEditing = this._editingRack;
+    this._editingRack = false;
     const rack = (currentRack && m.racks.includes(currentRack)) ? currentRack : m.racks[m.racks.length - 1];
     currentRack = rack;
-    if (!rack || rack.winner) return;
+    if (!rack) return;
+    // A rack that already has a winner can only be reopened through editRack().
+    if (rack.winner && !wasEditing) return;
 
     const isEdit = rack.endType !== null;
     if (isEdit) {
@@ -678,6 +747,13 @@ const ui = {
 
     let html = `<div class="modal-title">${isEdit ? 'Edit' : 'End'} Rack ${rack.rackNumber} <span class="modal-close" onclick="closeModal()">×</span></div>`;
     html += `<p class="text-sm text-dim mb-16">Tap an outcome. The winner is baked into the button.</p>`;
+    if (m.suddenDeath) {
+      html += `<div class="card" style="box-shadow:none;background:var(--surface2);margin-bottom:12px;">
+        <div class="text-sm" style="color:var(--yellow);">⚡ Sudden Death — ${m.format === '8-ball'
+          ? `this rack is worth <b>${nextSuddenDeathRackValue(m)} point${nextSuddenDeathRackValue(m) === 1 ? '' : 's'}</b>`
+          : 'every ball counts <b>double</b>'}</div>
+      </div>`;
+    }
 
     if (m.format === '8-ball') {
       html += `<div class="form-group"><label>🏠 ${esc(m.homePlayer.name)} wins</label><div class="endtype-grid">` +
@@ -831,15 +907,43 @@ const ui = {
     if (!rack.winner) return; // Can only edit completed racks
     // Point currentRack at this rack so endRackForm edits it
     currentRack = rack;
+    this._editingRack = true;
     this.endRackForm();
   },
 
   async undoLastRack() {
     if (currentMatch.racks.length === 0) { showToast('No racks to undo'); return; }
-    const lastRack = currentMatch.racks[currentMatch.racks.length - 1];
-    if (!confirm(`Undo Rack ${lastRack.rackNumber}?`)) return;
+    const m = currentMatch;
+    const rack = m.racks[m.racks.length - 1];
+
+    // Mirror the official app's "Undo Rack" screen: list exactly what is lost.
+    const lost = [];
+    if (rack.endType) lost.push(`End type: <b>${RACK_END_LABELS[rack.endType] || rack.endType}</b>`);
+    if (rack.winner) lost.push(`Winner: <b>${rack.winner === 'home' ? esc(m.homePlayer.name) : esc(m.awayPlayer.name)}</b>`);
+    if (rack.sdPoints) lost.push(`Sudden Death value: <b>${rack.sdPoints} point${rack.sdPoints === 1 ? '' : 's'}</b>`);
+    if (rack.innings) lost.push(`${rack.innings} inning${rack.innings === 1 ? '' : 's'}`);
+    if (rack.homeDefensiveShots || rack.awayDefensiveShots) lost.push(`${(rack.homeDefensiveShots || 0) + (rack.awayDefensiveShots || 0)} defensive shot(s)`);
+    if (rack.homeTimeouts || rack.awayTimeouts) lost.push(`${(rack.homeTimeouts || 0) + (rack.awayTimeouts || 0)} time-out(s)`);
+    const balls = (rack.balls || []).length + (rack.eightBalls || []).length;
+    if (balls) lost.push(`${balls} ball record(s)`);
+
+    showModal(`<div class="modal-title">Undo Rack ${rack.rackNumber} <span class="modal-close" onclick="closeModal()">×</span></div>
+      <p class="text-sm text-dim mb-16">This deletes the whole rack. Nothing else is touched.</p>
+      ${lost.length ? `<div class="card" style="box-shadow:none;background:var(--surface2);">
+        ${lost.map(l => `<div class="stat-row" style="border-bottom:none;"><span class="text-sm">${l}</span></div>`).join('')}
+      </div>` : '<p class="text-sm text-dim">This rack has no recorded data yet.</p>'}
+      <div class="mt-16">
+        <button class="btn btn-danger" onclick="ui.confirmUndoRack()">Undo Rack ${rack.rackNumber}</button>
+      </div>
+      <div class="mt-8"><button class="btn btn-secondary" onclick="closeModal()">Keep Rack</button></div>
+      <div style="height:16px;"></div>
+    `);
+  },
+
+  async confirmUndoRack() {
     undoLastRack(currentMatch);
     await saveMatch(currentMatch);
+    closeModal();
     this.renderMatch();
     showToast('Rack undone');
   },
@@ -847,7 +951,7 @@ const ui = {
   async forfeitMatch() {
     const m = currentMatch;
     showModal(`<div class="modal-title">Forfeit Match <span class="modal-close" onclick="closeModal()">×</span></div>
-      <p class="text-dim text-sm mb-16">Select which player forfeits.</p>
+      <p class="text-dim text-sm mb-16">Select which player forfeits. APA scores an individual forfeit as <b>2 match points</b> in regular play (3 in playoffs); no fabricated game score is recorded.</p>
       <div class="btn-row mb-8">
         <button class="btn btn-danger" onclick="ui.confirmForfeit('home')">🏠 ${esc(m.homePlayer.name)} forfeits</button>
       </div>
@@ -867,6 +971,31 @@ const ui = {
     closeModal();
     this.renderMatch();
     showToast('Match forfeited');
+  },
+
+  async startSuddenDeath() {
+    const m = currentMatch;
+    if (!m || m.suddenDeath) return;
+    showModal(`<div class="modal-title">Start Sudden Death <span class="modal-close" onclick="closeModal()">×</span></div>
+      <p class="text-sm text-dim mb-16">Use this when the match hits the time limit before anyone reaches their race.</p>
+      <div class="card" style="box-shadow:none;background:var(--surface2);">
+        ${m.format === '8-ball'
+          ? `<div class="text-sm">The next rack is worth <b>2 points</b>; any rack after that is worth <b>1 point</b>. The first SD rack settles this individual match for tie-break credit.</div>`
+          : `<div class="text-sm">Every ball pockets counts <b>double</b>, including the 9-ball. Players still race to their normal points-to-win.</div>`}
+      </div>
+      <div class="mt-16">
+        <button class="btn btn-primary" onclick="ui.confirmSuddenDeath()">Start Sudden Death</button>
+      </div>
+      <div style="height:16px;"></div>
+    `);
+  },
+
+  async confirmSuddenDeath() {
+    enableSuddenDeath(currentMatch);
+    await saveMatch(currentMatch);
+    closeModal();
+    this.renderMatch();
+    showToast('Sudden Death enabled');
   },
 
   async deleteMatch() {
@@ -954,7 +1083,7 @@ const ui = {
       </div>
       <div style="height:20px;"></div>
     `);
-    setTimeout(() => document.getElementById('nt-name').focus(), 100);
+    setTimeout(() => { const el = document.getElementById('nt-name'); if (el) el.focus(); }, 100);
   },
 
   async createTeam() {
@@ -1003,7 +1132,7 @@ const ui = {
       </div>
       <div style="height:20px;"></div>
     `);
-    setTimeout(() => document.getElementById('np-name').focus(), 100);
+    setTimeout(() => { const el = document.getElementById('np-name'); if (el) el.focus(); }, 100);
   },
 
   async createPlayer(teamId) {
@@ -1096,6 +1225,35 @@ const ui = {
     document.getElementById('chart-content').innerHTML = html;
   },
 
+  // ── Display / device ──
+  applyFontSize(size) {
+    const map = { small: '14px', medium: '16px', large: '18px', xlarge: '20px' };
+    document.documentElement.style.fontSize = map[size] || '16px';
+    const sel = document.getElementById('setting-font-size');
+    if (sel) sel.value = size;
+  },
+
+  async setFontSize(size) {
+    this.applyFontSize(size);
+    await setSetting('fontSize', size);
+    showToast('Text size saved');
+  },
+
+  // Keep the screen awake while a match is being scored (the official app
+  // holds a wake lock too - it declares android.permission.WAKE_LOCK).
+  async keepAwake(on) {
+    if (on) {
+      if (!('wakeLock' in navigator) || this._wakeLock) return;
+      try {
+        this._wakeLock = await navigator.wakeLock.request('screen');
+        this._wakeLock.addEventListener('release', () => { this._wakeLock = null; });
+      } catch (e) { this._wakeLock = null; }
+    } else if (this._wakeLock) {
+      try { await this._wakeLock.release(); } catch (e) {}
+      this._wakeLock = null;
+    }
+  },
+
   // ── Settings / Data ──
   async exportData() {
     const data = await exportAllData();
@@ -1145,8 +1303,19 @@ async function init() {
     console.error('Failed to open database:', e);
     showToast('Storage initialization failed');
   }
+  try {
+    const size = await getSetting('fontSize', 'medium');
+    ui.applyFontSize(size);
+  } catch (e) { /* settings store may be unavailable on first run */ }
   ui.refreshMatchList();
 }
+
+// Re-arm the wake lock when the tab comes back to the foreground.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && currentMatch && currentMatch.status === 'in_progress') {
+    ui.keepAwake(true);
+  }
+});
 
 document.addEventListener('DOMContentLoaded', init);
 
