@@ -227,17 +227,16 @@ test('rack 1 breaks with the lag winner, then alternates', () => {
   assert.strictEqual(r2.breaker, 'home');
   assert.strictEqual(S.currentShooter(r1), 'away');
 });
-test('an inning counts when the non-breaker leaves the table', () => {
+test('each change of shooter counts one inning', () => {
   const m = new8(5, 5);
   m.lagWinner = 'home';
   const r = S.startRack(m);
-  assert.strictEqual(S.setTurn(m, r, 'away'), false); // breaker missed, no inning yet
-  assert.strictEqual(r.innings, 0);
-  assert.strictEqual(S.setTurn(m, r, 'home'), true);  // non-breaker missed -> 1 inning
+  assert.strictEqual(S.setTurn(m, r, 'away'), true);
   assert.strictEqual(r.innings, 1);
-  assert.strictEqual(S.setTurn(m, r, 'away'), false);
   assert.strictEqual(S.setTurn(m, r, 'home'), true);
   assert.strictEqual(r.innings, 2);
+  assert.strictEqual(S.setTurn(m, r, 'away'), true);
+  assert.strictEqual(r.innings, 3);
 });
 test('tapping the same player twice does nothing', () => {
   const m = new8(5, 5);

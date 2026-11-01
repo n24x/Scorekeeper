@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────────────────────────────
-const APP_VERSION = '1.5';
+const APP_VERSION = '1.6';
 let currentView = 'home';
 let currentMatch = null;
 let currentRack = null;
@@ -464,17 +464,16 @@ const ui = {
         </div>
         `;
 
-        // 9-ball: live ball picker with player toggle
+        // 9-ball: balls are credited to whoever is at the table. No second
+        // "who made it" toggle - tap the ball, that's it.
         if (m.format === '9-ball') {
           if (!rack._balls) rack._balls = rack.balls || [];
-          if (!rack._scorerSide) rack._scorerSide = 'home';
           html += `
           <div class="live-scorer">
-            <div class="section-title">9-Ball — Who Made Each Ball</div>
+            <div class="section-title">9-Ball — tap each ball made</div>
+            <div class="text-sm text-dim mb-8">Balls go to <b id="ball-owner">${esc(currentShooter(rack) === 'home' ? m.homePlayer.name : m.awayPlayer.name)}</b>.</div>
             <div class="scorer-toggle">
-              <button class="btn ${rack._scorerSide === 'home' ? 'active' : 'btn-secondary'}" id="tog-home" onclick="ui.setScorerSide('home')">🏠 ${esc(m.homePlayer.name)}</button>
-              <button class="btn ${rack._scorerSide === 'away' ? 'active' : 'btn-secondary'}" id="tog-away" onclick="ui.setScorerSide('away')">👥 ${esc(m.awayPlayer.name)}</button>
-              <button class="btn ${rack._scorerSide === 'dead' ? 'active' : 'btn-secondary'}" id="tog-dead" onclick="ui.setScorerSide('dead')">💀 Dead</button>
+              <button class="btn dead-btn ${rack._deadMode ? 'active' : 'btn-secondary'}" onclick="ui.toggleDeadMode()">💀 Dead ball</button>
             </div>
             <div class="ball-grid-sm" id="live-ball-grid"></div>
             <div class="live-total" id="live-ball-total"></div>
@@ -632,6 +631,8 @@ const ui = {
     });
     const inn = document.getElementById('live-innings');
     if (inn) inn.textContent = rack.innings || 0;
+    const owner = document.getElementById('ball-owner');
+    if (owner) owner.textContent = side === 'home' ? m.homePlayer.name : m.awayPlayer.name;
     this.updateTurnNote(counted);
   },
 
@@ -690,37 +691,41 @@ const ui = {
     await saveMatch(currentMatch);
   },
 
-  async setScorerSide(side) {
+  toggleDeadMode() {
     const rack = currentRack;
     if (!rack || rack.winner) return;
-    rack._scorerSide = side;
-    // Update toggle button styles
-    ['home', 'away', 'dead'].forEach(s => {
-      const btn = document.getElementById('tog-' + s);
-      if (btn) btn.className = s === side ? 'btn active' : 'btn btn-secondary';
-    });
-    await saveMatch(currentMatch);
+    rack._deadMode = !rack._deadMode;
+    this.renderMatch();
+    if (rack._deadMode) showToast('Dead ball mode — tap the ball that was not credited');
   },
 
   async pickBall(num) {
     const rack = currentRack;
     if (!rack || rack.winner) return;
-    const side = rack._scorerSide || 'home';
+    const dead = !!rack._deadMode;
     // APA: "The 9-ball is never a dead ball. It is spotted."
-    if (num === 9 && side === 'dead') {
+    if (num === 9 && dead) {
       showToast('The 9-ball is never dead — it gets spotted');
       return;
     }
+    // The ball belongs to whoever is at the table. No second toggle.
+    const side = dead ? 'dead' : currentShooter(rack);
+
     if (!rack._balls) rack._balls = [];
     const existing = rack._balls.find(b => b.number === num);
-    // Toggle off: if ball exists and is assigned to the same side, remove it
+    // Tapping the same ball for the same player again removes it.
     let next = side;
-    if (existing && existing.pocketedBy === side && !existing.dead && side !== 'dead') next = null;
+    if (existing && !dead && existing.pocketedBy === side && !existing.dead) next = null;
     rack._balls = rack._balls.filter(b => b.number !== num);
-    if (next) rack._balls.push({ number: num, pocketedBy: side === 'dead' ? null : side, dead: side === 'dead' });
+    if (next) rack._balls.push({ number: num, pocketedBy: dead ? null : side, dead });
+    if (dead) {
+      rack._deadMode = false; // one-shot mode
+      const btn = document.querySelector('.dead-btn');
+      if (btn) { btn.classList.remove('active'); btn.classList.add('btn-secondary'); }
+    }
     // Keep the saved rack in step with the live grid so running totals and the
     // "match over at target" check see the balls already pocketed.
-    rack.balls = rack._balls.map(b => ({ number: b.number, pocketedBy: b.pocketedBy || 'home', dead: !!b.dead }));
+    rack.balls = rack._balls.map(b => ({ number: b.number, pocketedBy: b.dead ? null : (b.pocketedBy || null), dead: !!b.dead }));
     this.renderLiveBallGrid();
     this.updateLiveScoreboard();
     await saveMatch(currentMatch);
@@ -763,7 +768,7 @@ const ui = {
 
     rack.balls = (rack._balls || []).map(b => ({
       number: b.number,
-      pocketedBy: b.pocketedBy || 'home',
+      pocketedBy: b.dead ? null : (b.pocketedBy || null),
       dead: b.dead || false
     }));
     endRack(m, rack, endType, winner);

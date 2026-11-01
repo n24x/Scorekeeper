@@ -254,21 +254,20 @@ function startRack(match) {
 }
 
 /** Change who is at the table.
- *  An inning is a full cycle, so it only completes when the player who did
- *  NOT break finishes their turn (APA scoresheet: the bottom player misses or
- *  fouls). Returns true when an inning was counted. */
+ *  Each change of shooter counts one inning (the user's league convention).
+ *  Returns true when an inning was counted. */
 function setTurn(match, rack, side) {
   if (!rack || rack.winner || (side !== 'home' && side !== 'away')) return false;
   if (!rack.turn) rack.turn = rack.breaker || 'home';
   if (side === rack.turn) return false;
 
-  const outgoing = rack.turn;
-  const nonBreaker = opposite(rack.breaker || 'home');
-  const countedInning = outgoing === nonBreaker;
-  if (countedInning) rack.innings = (rack.innings || 0) + 1;
+  // Every change of shooter counts as one inning in this app's bookkeeping:
+  // tap the other player when the turn passes. The +/- stepper stays for
+  // fixing a mis-tap.
+  rack.innings = (rack.innings || 0) + 1;
   rack.turn = side;
   match.updatedAt = Date.now();
-  return countedInning;
+  return true;
 }
 
 /** Who is at the table, or the breaker if the turn has not been touched. */

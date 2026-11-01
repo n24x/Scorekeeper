@@ -1,7 +1,7 @@
 APA Scorekeeper - Offline Pool League Scoring App
 ===================================================
 
-Version: 1.5
+Version: 1.6
 By: Built for zappb44
 
 WHAT THIS APP DOES
@@ -29,6 +29,15 @@ FEATURES
 - Race chart reference (8-ball and 9-ball)
 - Works offline (PWA with service worker)
 - Installable to home screen
+
+NEW IN 1.6
+----------
+- 9-ball ball entry is merged with the turn: tap a ball and it is credited to
+  whoever is at the table. There is no second "who made it" toggle.
+- Dead balls use a one-shot "Dead ball" button: arm it, tap the ball, and it
+  goes back to normal.
+- Every change of shooter counts one inning, so tapping back and forth
+  builds the innings count. The +/- stepper still fixes mistakes.
 
 NEW IN 1.5
 ----------
