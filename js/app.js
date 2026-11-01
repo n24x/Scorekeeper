@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────────────────────────────
-const APP_VERSION = '1.7';
+const APP_VERSION = '1.8';
 let currentView = 'home';
 let currentMatch = null;
 let currentRack = null;
@@ -538,8 +538,8 @@ const ui = {
             <span class="rack-number">Rack ${r.rackNumber}</span>
             <span class="rack-result">${rackScore} ${endLabel ? '· ' + endLabel : ''}</span>
           </div>`;
-          // Add edit button for completed racks
-          if (r.winner) {
+          // Add edit button for any rack that has ended (winner or stalemate)
+          if (r.winner || r.endType) {
             html += `<div style="text-align:right;margin-top:-4px;margin-bottom:4px;">
               <button class="btn btn-secondary" style="width:auto;padding:4px 12px;font-size:0.75rem;" onclick="event.stopPropagation();ui.editRack(${r.rackNumber - 1})">✏️ Edit</button>
             </div>`;
@@ -1081,8 +1081,8 @@ const ui = {
       <div class="stat-row"><span class="stat-label">${esc(m.homePlayer.name)} Timeouts</span><span class="stat-value">${rack.homeTimeouts || 0}</span></div>
       <div class="stat-row"><span class="stat-label">${esc(m.awayPlayer.name)} Timeouts</span><span class="stat-value">${rack.awayTimeouts || 0}</span></div>
       </div>`;
-    // Add edit button if rack is completed
-    if (rack.winner) {
+    // Add edit button if the rack has ended
+    if (rack.winner || rack.endType) {
       html += `<div class="mt-16">
         <button class="btn btn-primary" onclick="closeModal();ui.editRack(${index})">✏️ Edit This Rack</button>
       </div>`;
@@ -1090,15 +1090,160 @@ const ui = {
     showModal(html);
   },
 
+  /** Full rack editor: balls, stats, winner and ending in one sheet.
+   *  Works on a draft, so Cancel leaves the rack untouched. */
   editRack(index) {
     const m = currentMatch;
     const rack = m.racks[index];
     if (!rack) return;
-    if (!rack.winner) return; // Can only edit completed racks
-    // Point currentRack at this rack so endRackForm edits it
     currentRack = rack;
-    this._editingRack = true;
-    this.endRackForm();
+    this._editIndex = index;
+    this._editDraft = {
+      balls: (rack.balls || []).map(b => ({ number: b.number, pocketedBy: b.pocketedBy, dead: !!b.dead })),
+      innings: rack.innings || 0,
+      homeDefensiveShots: rack.homeDefensiveShots || 0,
+      awayDefensiveShots: rack.awayDefensiveShots || 0,
+      homeTimeouts: rack.homeTimeouts || 0,
+      awayTimeouts: rack.awayTimeouts || 0,
+      winner: rack.winner || null,
+      endType: rack.endType || null,
+      target: 'home'
+    };
+    this.renderRackEditor();
+  },
+
+  renderRackEditor() {
+    const m = currentMatch;
+    const d = this._editDraft;
+    const rack = m.racks[this._editIndex];
+    if (!d) return;
+
+    const ballSections = m.format === '9-ball' ? (() => {
+      const bySide = side => d.balls.filter(b => side === 'dead' ? b.dead : (!b.dead && b.pocketedBy === side));
+      const inPlay = new Set(d.balls.map(b => b.number));
+      const remaining = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(n => !inPlay.has(n));
+      const row = (list, cb) => list.length
+        ? list.map(b => this.ballHtml(b.number, `ui.editReturn(${b.number})`)).join('')
+        : '<span class="text-dim text-sm">—</span>';
+      return `
+        <div class="section-title" style="margin-top:0;">Add a ball to</div>
+        <div class="scorer-toggle">
+          <button class="btn ${d.target === 'home' ? 'active' : 'btn-secondary'}" onclick="ui.editSetTarget('home')">🏠 ${esc(m.homePlayer.name)}</button>
+          <button class="btn ${d.target === 'away' ? 'active' : 'btn-secondary'}" onclick="ui.editSetTarget('away')">👥 ${esc(m.awayPlayer.name)}</button>
+          <button class="btn ${d.target === 'dead' ? 'active' : 'btn-secondary'}" onclick="ui.editSetTarget('dead')">💀 Dead</button>
+        </div>
+        <div class="ball-section">
+          <div class="ball-section-title">On the table</div>
+          <div class="ball-row">${remaining.length ? remaining.map(n => this.ballHtml(n, `ui.editPick(${n})`)).join('') : '<span class="text-dim text-sm">All balls placed</span>'}</div>
+        </div>
+        <div class="ball-section home">
+          <div class="ball-section-title">${esc(m.homePlayer.name)}</div>
+          <div class="ball-row">${row(bySide('home'))}</div>
+        </div>
+        <div class="ball-section away">
+          <div class="ball-section-title">${esc(m.awayPlayer.name)}</div>
+          <div class="ball-row">${row(bySide('away'))}</div>
+        </div>
+        <div class="ball-section dead">
+          <div class="ball-section-title">Dead balls</div>
+          <div class="ball-row">${row(bySide('dead'))}</div>
+        </div>`;
+    })() : '';
+
+    const stepper = (label, field) => `<div class="stat-row">
+      <span class="stat-label">${label}</span>
+      <span class="stat-value" style="display:flex;align-items:center;gap:10px;">
+        <button class="step-btn" style="width:34px;height:34px;font-size:1.1rem;" onclick="ui.editStat('${field}',-1)">−</button>
+        <span id="ed-${field}" style="min-width:24px;text-align:center;">${d[field]}</span>
+        <button class="step-btn" style="width:34px;height:34px;font-size:1.1rem;" onclick="ui.editStat('${field}',1)">+</button>
+      </span>
+    </div>`;
+
+    const opts = this.endTypeOptions(d.winner);
+    const endButtons = opts.map(o => `<button class="endtype-btn${d.endType === o.type ? ' selected' : ''}" onclick="ui.editEndType('${o.type}')">${esc(o.label)}</button>`).join('');
+
+    showModal(`<div class="modal-title">Edit Rack ${rack.rackNumber} <span class="modal-close" onclick="ui.cancelRackEdit()">×</span></div>
+      ${ballSections}
+      <div class="section-title">Stats</div>
+      ${stepper('Innings', 'innings')}
+      ${stepper(esc(m.homePlayer.name) + ' defensive', 'homeDefensiveShots')}
+      ${stepper(esc(m.awayPlayer.name) + ' defensive', 'awayDefensiveShots')}
+      ${stepper(esc(m.homePlayer.name) + ' time-outs', 'homeTimeouts')}
+      ${stepper(esc(m.awayPlayer.name) + ' time-outs', 'awayTimeouts')}
+      <div class="section-title">Winner</div>
+      <div class="scorer-toggle">
+        <button class="btn ${d.winner === 'home' ? 'active' : 'btn-secondary'}" onclick="ui.editWinner('home')">🏠 ${esc(m.homePlayer.name)}</button>
+        <button class="btn ${d.winner === 'away' ? 'active' : 'btn-secondary'}" onclick="ui.editWinner('away')">👥 ${esc(m.awayPlayer.name)}</button>
+        <button class="btn ${d.winner === null ? 'active' : 'btn-secondary'}" onclick="ui.editWinner(null)">None</button>
+      </div>
+      <div class="section-title">How it ended</div>
+      <div class="endtype-grid">${endButtons}</div>
+      <div class="mt-16"><button class="btn btn-primary" onclick="ui.saveRackEdit()">Save Changes</button></div>
+      <div class="mt-8"><button class="btn btn-secondary" onclick="ui.cancelRackEdit()">Cancel</button></div>
+      <div style="height:16px;"></div>
+    `);
+  },
+
+  editSetTarget(side) { this._editDraft.target = side; this.renderRackEditor(); },
+  editPick(n) {
+    const d = this._editDraft;
+    if (!d || d.balls.some(b => b.number === n)) return;
+    if (n === 9 && d.target === 'dead') { showToast('The 9-ball is never dead — it gets spotted'); return; }
+    d.balls.push({ number: n, pocketedBy: d.target === 'dead' ? null : d.target, dead: d.target === 'dead' });
+    this.renderRackEditor();
+  },
+  editReturn(n) {
+    const d = this._editDraft;
+    if (!d) return;
+    d.balls = d.balls.filter(b => b.number !== n);
+    this.renderRackEditor();
+  },
+  editStat(field, delta) {
+    const d = this._editDraft;
+    if (!d) return;
+    d[field] = Math.max(0, (d[field] || 0) + delta);
+    const el = document.getElementById('ed-' + field);
+    if (el) el.textContent = d[field];
+  },
+  editWinner(side) { this._editDraft.winner = side; this._editDraft.endType = null; this.renderRackEditor(); },
+  editEndType(type) { this._editDraft.endType = type; this.renderRackEditor(); },
+  cancelRackEdit() { this._editDraft = null; closeModal(); },
+
+  async saveRackEdit() {
+    const m = currentMatch;
+    const d = this._editDraft;
+    const rack = m.racks[this._editIndex];
+    if (!d || !rack) return;
+    if (!d.endType) { showToast('Pick how the rack ended'); return; }
+    if (d.winner !== null && d.endType === 'STALEMATE') { showToast('A stalemate has no winner'); return; }
+
+    // In 9-ball every winning ending means the winner potted the 9, so the
+    // 9 must sit in their section. This catches a corrected scorecard that
+    // contradicts itself.
+    if (m.format === '9-ball' && d.winner) {
+      const nine = d.balls.find(b => b.number === 9);
+      const name = d.winner === 'home' ? m.homePlayer.name : m.awayPlayer.name;
+      if (!nine || nine.dead || nine.pocketedBy !== d.winner) {
+        showToast(`The 9-ball has to be in ${name}'s section for them to win this rack`);
+        return;
+      }
+    }
+
+    rack.balls = m.format === '9-ball'
+      ? d.balls.map(b => ({ number: b.number, pocketedBy: b.dead ? null : (b.pocketedBy || null), dead: !!b.dead }))
+      : [];
+    rack.innings = d.innings;
+    rack.homeDefensiveShots = d.homeDefensiveShots;
+    rack.awayDefensiveShots = d.awayDefensiveShots;
+    rack.homeTimeouts = d.homeTimeouts;
+    rack.awayTimeouts = d.awayTimeouts;
+
+    endRack(m, rack, d.endType, d.winner);
+    await saveMatch(m);
+    this._editDraft = null;
+    closeModal();
+    this.renderMatch();
+    showToast('Rack updated');
   },
 
   async undoLastRack() {

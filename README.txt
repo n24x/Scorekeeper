@@ -1,7 +1,7 @@
 APA Scorekeeper - Offline Pool League Scoring App
 ===================================================
 
-Version: 1.7
+Version: 1.8
 By: Built for zappb44
 
 WHAT THIS APP DOES
@@ -29,6 +29,20 @@ FEATURES
 - Race chart reference (8-ball and 9-ball)
 - Works offline (PWA with service worker)
 - Installable to home screen
+
+NEW IN 1.8
+----------
+- One Edit Rack sheet for corrections. Tap Edit on any finished rack and you
+  can move a ball from one player to the other or to the dead section, put a
+  ball back on the table, fix innings, defensive shots and time-outs, change
+  the winner and change how the rack ended.
+- Edits work on a draft, so Cancel leaves the rack exactly as it was. Saving
+  recomputes the rack points, the match points, sudden death and whether the
+  match is complete.
+- Mistake guard: a 9-ball winner must have the 9-ball in their section, so the
+  sheet cannot save a scorecard that contradicts itself.
+- Live corrections still work mid-rack: tap a ball in a player's section to put
+  it back, use the dead-ball button, or use the innings +/- stepper.
 
 NEW IN 1.7
 ----------
