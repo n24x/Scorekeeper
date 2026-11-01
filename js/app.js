@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────────────────────────────
-const APP_VERSION = '1.8';
+const APP_VERSION = '1.9';
 let currentView = 'home';
 let currentMatch = null;
 let currentRack = null;
@@ -917,8 +917,73 @@ const ui = {
     this._endRackEditing = isEdit;
     rack._tempWinner = isEdit ? (rack._wasWinner || null) : undefined;
     rack._tempEndType = isEdit ? rack._prevEndType : undefined;
+    if (m.format === '8-ball') {
+      // The official app asks who made the 8-ball and derives the winner.
+      let maker = null;
+      if (isEdit) {
+        if (rack.endType === 'SCRATCH_ON_EIGHT' || rack.endType === 'WRONG_POCKET') {
+          maker = rack.winner === 'home' ? 'away' : 'home';
+        } else if (rack.winner) {
+          maker = rack.winner;
+        }
+      }
+      rack._maker = maker;
+      if (isEdit) this.showEndTypeStep();
+      else this.showMakerStep();
+      return;
+    }
     if (isEdit) this.showEndTypeStep();
     else this.showWinnerStep();
+  },
+
+  /** 8-ball step 1 — who made the 8-ball. The winner follows from this. */
+  showMakerStep() {
+    const m = currentMatch;
+    const rack = currentRack;
+    const isEdit = this._endRackEditing;
+
+    let html = `<div class="modal-title">${isEdit ? 'Edit' : 'End'} Rack ${rack.rackNumber} <span class="modal-close" onclick="closeModal()">×</span></div>`;
+    html += `<p class="text-sm text-dim mb-8">Who made the 8-ball?</p>`;
+    if (m.suddenDeath) {
+      html += `<div class="card" style="box-shadow:none;background:var(--surface2);margin-bottom:12px;">
+        <div class="text-sm" style="color:var(--yellow);">⚡ Sudden Death — this rack is worth <b>${nextSuddenDeathRackValue(m)} point${nextSuddenDeathRackValue(m) === 1 ? '' : 's'}</b></div>
+      </div>`;
+    }
+    html += `<button class="btn btn-primary" style="margin-bottom:8px;" onclick="ui.pickRackMaker('home')">🏠 ${esc(m.homePlayer.name)}</button>
+      <button class="btn btn-primary" style="margin-bottom:8px;" onclick="ui.pickRackMaker('away')">👥 ${esc(m.awayPlayer.name)}</button>
+      <button class="btn btn-secondary" onclick="ui.pickRackMaker('null')">No 8-ball made / rack abandoned</button>
+      <div style="height:20px;"></div>`;
+    showModal(html);
+  },
+
+  pickRackMaker(side) {
+    if (!currentRack) return;
+    currentRack._maker = side === 'null' ? null : side;
+    currentRack._tempEndType = undefined;
+    this.showEndTypeStep();
+  },
+
+  /** 8-ball endings, seen from whoever dropped the 8. */
+  endTypeOptions8(maker) {
+    const m = currentMatch;
+    const home = m.homePlayer.name;
+    const away = m.awayPlayer.name;
+    if (!maker) {
+      return [
+        { type: 'STALEMATE', label: '🤝 Stalemate', sub: 'no winner — rack replayed', winner: null },
+        { type: 'END_RACK_EARLY', label: '⏹ Rack ended early', sub: 'no winner — scores stay', winner: null }
+      ];
+    }
+    const name = maker === 'home' ? home : away;
+    const other = maker === 'home' ? away : home;
+    const otherSide = maker === 'home' ? 'away' : 'home';
+    return [
+      { type: 'STANDARD', label: `🎯 ${name} made the 8-ball`, sub: `${name} wins the rack`, winner: maker },
+      { type: 'EIGHT_BREAK_AND_RUN', label: '🏃 Break & Run', sub: `${name} ran the rack`, winner: maker },
+      { type: 'EIGHT_ON_BREAK', label: '💥 8 on the break', sub: `${name} wins`, winner: maker },
+      { type: 'SCRATCH_ON_EIGHT', label: `🔲 ${name} scratched on the 8`, sub: `${other} wins`, winner: otherSide },
+      { type: 'WRONG_POCKET', label: `❌ ${name} put the 8 in the wrong pocket`, sub: `${other} wins`, winner: otherSide }
+    ];
   },
 
   /** Step 1 — who won the rack. */
@@ -985,8 +1050,11 @@ const ui = {
     const m = currentMatch;
     const rack = currentRack;
     const winner = rack._tempWinner;
-    const opts = this.endTypeOptions(winner);
-    const who = winner === null ? 'No winner' : `${winner === 'home' ? m.homePlayer.name : m.awayPlayer.name} won`;
+    const makerMode = m.format === '8-ball' && Object.prototype.hasOwnProperty.call(rack, '_maker');
+    const opts = makerMode ? this.endTypeOptions8(rack._maker) : this.endTypeOptions(winner);
+    const who = makerMode
+      ? (rack._maker ? `${rack._maker === 'home' ? m.homePlayer.name : m.awayPlayer.name} made the 8` : 'No 8-ball made')
+      : (winner === null ? 'No winner' : `${winner === 'home' ? m.homePlayer.name : m.awayPlayer.name} won`);
 
     let html = `<div class="modal-title">How did rack ${rack.rackNumber} end?</div>
       <p class="text-sm text-dim mb-8">${esc(who)}</p>
@@ -994,7 +1062,7 @@ const ui = {
       opts.map(o => `<button class="endtype-btn${rack._tempEndType === o.type ? ' selected' : ''}" onclick="ui.selectEndType('${o.type}', this)">${esc(o.label)}<br><small style="font-weight:400;">${esc(o.sub)}</small></button>`).join('') +
       `</div>
       <div class="mt-16"><button class="btn btn-primary" onclick="ui.submitEndRack('${m.format}')">${this._endRackEditing ? 'Save Changes' : 'Save Rack'}</button></div>
-      <div class="mt-8"><button class="btn btn-secondary" onclick="ui.showWinnerStep()">← Change winner</button></div>
+      <div class="mt-8"><button class="btn btn-secondary" onclick="${m.format === '8-ball' ? "ui.showMakerStep()" : "ui.showWinnerStep()"}">← Change ${m.format === '8-ball' ? 'maker' : 'winner'}</button></div>
       <div style="height:16px;"></div>`;
     showModal(html);
   },
@@ -1015,8 +1083,13 @@ const ui = {
       return;
     }
     const endType = rack._tempEndType;
-    // Winner is encoded in the end-type selection (null for stalemate)
-    const winner = rack._tempWinner !== undefined ? rack._tempWinner : null;
+    // 8-ball: the maker plus the ending decide the winner. 9-ball: the winner
+    // was picked explicitly and the ending labels it.
+    let winner = rack._tempWinner !== undefined ? rack._tempWinner : null;
+    if (format === '8-ball' && Object.prototype.hasOwnProperty.call(rack, '_maker')) {
+      const opt = this.endTypeOptions8(rack._maker).find(o => o.type === endType);
+      winner = opt ? opt.winner : null;
+    }
 
     rack.innings = rack.innings || 0;
     rack.homeDefensiveShots = rack.homeDefensiveShots || 0;
@@ -1027,7 +1100,7 @@ const ui = {
     if (format === '9-ball') {
       rack.balls = (rack._balls || []).map(b => ({
         number: b.number,
-        pocketedBy: b.pocketedBy || 'home',
+        pocketedBy: b.dead ? null : (b.pocketedBy || null),
         dead: b.dead || false
       }));
     } else {
@@ -1040,6 +1113,7 @@ const ui = {
 
     delete rack._tempWinner;
     delete rack._tempEndType;
+    delete rack._maker;
     delete rack._balls;
     delete rack._scorerSide;
 
@@ -1064,6 +1138,13 @@ const ui = {
       <div class="card">
         <div class="stat-row"><span class="stat-label">Winner</span><span class="stat-value">${rack.winner ? (rack.winner === 'home' ? esc(m.homePlayer.name) : esc(m.awayPlayer.name)) : '—'}</span></div>
         <div class="stat-row"><span class="stat-label">End Type</span><span class="stat-value">${endLabel}</span></div>
+        ${m.format === '8-ball' && rack.endType ? (() => {
+          const maker = (rack.endType === 'SCRATCH_ON_EIGHT' || rack.endType === 'WRONG_POCKET')
+            ? (rack.winner === 'home' ? 'away' : 'home')
+            : rack.winner;
+          const who = maker ? (maker === 'home' ? m.homePlayer.name : m.awayPlayer.name) : 'Nobody';
+          return `<div class="stat-row"><span class="stat-label">8-Ball Made By</span><span class="stat-value">${esc(who)}</span></div>`;
+        })() : ''}
         <div class="stat-row"><span class="stat-label">Innings</span><span class="stat-value">${rack.innings || 0}</span></div>`;
     if (m.format === '9-ball') {
       html += `<div class="stat-row"><span class="stat-label">${esc(m.homePlayer.name)} Ball Points</span><span class="stat-value">${rack.homeBallPoints || 0}</span></div>
@@ -1107,7 +1188,12 @@ const ui = {
       awayTimeouts: rack.awayTimeouts || 0,
       winner: rack.winner || null,
       endType: rack.endType || null,
-      target: 'home'
+      target: 'home',
+      maker: m.format === '8-ball'
+        ? ((rack.endType === 'SCRATCH_ON_EIGHT' || rack.endType === 'WRONG_POCKET')
+            ? (rack.winner === 'home' ? 'away' : 'home')
+            : (rack.winner || null))
+        : undefined
     };
     this.renderRackEditor();
   },
@@ -1159,8 +1245,22 @@ const ui = {
       </span>
     </div>`;
 
-    const opts = this.endTypeOptions(d.winner);
+    const makerMode = m.format === '8-ball';
+    const opts = makerMode ? this.endTypeOptions8(d.maker) : this.endTypeOptions(d.winner);
     const endButtons = opts.map(o => `<button class="endtype-btn${d.endType === o.type ? ' selected' : ''}" onclick="ui.editEndType('${o.type}')">${esc(o.label)}</button>`).join('');
+    const whoBlock = makerMode
+      ? `<div class="section-title">Who made the 8-ball?</div>
+      <div class="scorer-toggle">
+        <button class="btn ${d.maker === 'home' ? 'active' : 'btn-secondary'}" onclick="ui.editMaker('home')">🏠 ${esc(m.homePlayer.name)}</button>
+        <button class="btn ${d.maker === 'away' ? 'active' : 'btn-secondary'}" onclick="ui.editMaker('away')">👥 ${esc(m.awayPlayer.name)}</button>
+        <button class="btn ${d.maker === null ? 'active' : 'btn-secondary'}" onclick="ui.editMaker(null)">Nobody</button>
+      </div>`
+      : `<div class="section-title">Winner</div>
+      <div class="scorer-toggle">
+        <button class="btn ${d.winner === 'home' ? 'active' : 'btn-secondary'}" onclick="ui.editWinner('home')">🏠 ${esc(m.homePlayer.name)}</button>
+        <button class="btn ${d.winner === 'away' ? 'active' : 'btn-secondary'}" onclick="ui.editWinner('away')">👥 ${esc(m.awayPlayer.name)}</button>
+        <button class="btn ${d.winner === null ? 'active' : 'btn-secondary'}" onclick="ui.editWinner(null)">None</button>
+      </div>`;
 
     showModal(`<div class="modal-title">Edit Rack ${rack.rackNumber} <span class="modal-close" onclick="ui.cancelRackEdit()">×</span></div>
       ${ballSections}
@@ -1170,12 +1270,7 @@ const ui = {
       ${stepper(esc(m.awayPlayer.name) + ' defensive', 'awayDefensiveShots')}
       ${stepper(esc(m.homePlayer.name) + ' time-outs', 'homeTimeouts')}
       ${stepper(esc(m.awayPlayer.name) + ' time-outs', 'awayTimeouts')}
-      <div class="section-title">Winner</div>
-      <div class="scorer-toggle">
-        <button class="btn ${d.winner === 'home' ? 'active' : 'btn-secondary'}" onclick="ui.editWinner('home')">🏠 ${esc(m.homePlayer.name)}</button>
-        <button class="btn ${d.winner === 'away' ? 'active' : 'btn-secondary'}" onclick="ui.editWinner('away')">👥 ${esc(m.awayPlayer.name)}</button>
-        <button class="btn ${d.winner === null ? 'active' : 'btn-secondary'}" onclick="ui.editWinner(null)">None</button>
-      </div>
+      ${whoBlock}
       <div class="section-title">How it ended</div>
       <div class="endtype-grid">${endButtons}</div>
       <div class="mt-16"><button class="btn btn-primary" onclick="ui.saveRackEdit()">Save Changes</button></div>
@@ -1206,6 +1301,7 @@ const ui = {
     if (el) el.textContent = d[field];
   },
   editWinner(side) { this._editDraft.winner = side; this._editDraft.endType = null; this.renderRackEditor(); },
+  editMaker(side) { this._editDraft.maker = side; this._editDraft.endType = null; this.renderRackEditor(); },
   editEndType(type) { this._editDraft.endType = type; this.renderRackEditor(); },
   cancelRackEdit() { this._editDraft = null; closeModal(); },
 
@@ -1215,7 +1311,9 @@ const ui = {
     const rack = m.racks[this._editIndex];
     if (!d || !rack) return;
     if (!d.endType) { showToast('Pick how the rack ended'); return; }
-    if (d.winner !== null && d.endType === 'STALEMATE') { showToast('A stalemate has no winner'); return; }
+    if (d.endType === 'STALEMATE' && (m.format === '8-ball' ? d.maker : d.winner) !== null) {
+      showToast('A stalemate has no winner'); return;
+    }
 
     // In 9-ball every winning ending means the winner potted the 9, so the
     // 9 must sit in their section. This catches a corrected scorecard that
@@ -1238,7 +1336,12 @@ const ui = {
     rack.homeTimeouts = d.homeTimeouts;
     rack.awayTimeouts = d.awayTimeouts;
 
-    endRack(m, rack, d.endType, d.winner);
+    let winner = d.winner;
+    if (m.format === '8-ball') {
+      const opt = this.endTypeOptions8(d.maker).find(o => o.type === d.endType);
+      winner = opt ? opt.winner : null;
+    }
+    endRack(m, rack, d.endType, winner);
     await saveMatch(m);
     this._editDraft = null;
     closeModal();

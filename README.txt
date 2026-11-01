@@ -1,7 +1,7 @@
 APA Scorekeeper - Offline Pool League Scoring App
 ===================================================
 
-Version: 1.8
+Version: 1.9
 By: Built for zappb44
 
 WHAT THIS APP DOES
@@ -29,6 +29,18 @@ FEATURES
 - Race chart reference (8-ball and 9-ball)
 - Works offline (PWA with service worker)
 - Installable to home screen
+
+NEW IN 1.9
+----------
+- 8-ball now asks "Who made the 8-ball?" and the winner follows from that,
+  like the official app. No ball-by-ball entry and no ball display at all.
+- The endings are listed from the maker's point of view:
+  "Bob made the 8-ball" (Bob wins), "Break & Run" (Bob wins), "8 on the break"
+  (Bob wins), "Bob scratched on the 8" (Ada wins), "Bob put the 8 in the wrong
+  pocket" (Ada wins).
+- Pick "No 8-ball made" for a stalemate or an abandoned rack.
+- The rack view shows "8-Ball Made By", and Edit Rack lets you change the maker
+  as well as the ending; the winner is recomputed either way.
 
 NEW IN 1.8
 ----------
