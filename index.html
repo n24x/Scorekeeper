@@ -353,6 +353,37 @@
     .ball-sm.picked-away { box-shadow: 0 0 0 3px var(--red); }
     .ball-sm.picked-dead { opacity: 0.35; }
     .ball-sm.picked-dead::after { content: '💀'; position: absolute; font-size: 0.6rem; }
+    /* 9-ball: real-looking balls in sections */
+    .ball-section { margin-top: 12px; }
+    .ball-section-title {
+      font-size: 0.75rem; text-transform: uppercase; letter-spacing: .5px;
+      color: var(--text-dim); margin-bottom: 6px; font-weight: 700;
+    }
+    .ball-section.home .ball-section-title { color: var(--green); }
+    .ball-section.away .ball-section-title { color: var(--red); }
+    .ball-section.dead .ball-section-title { color: #9ca3af; }
+    .ball-row { display: flex; flex-wrap: wrap; gap: 6px; min-height: 38px; align-items: center; }
+    .ball-real {
+      width: 38px; height: 38px; border-radius: 50%; border: none; padding: 0;
+      position: relative; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.55), rgba(255,255,255,0) 42%), var(--ball-color);
+      box-shadow: inset -3px -5px 8px rgba(0,0,0,.45), inset 2px 3px 6px rgba(255,255,255,.35), 0 2px 5px rgba(0,0,0,.5);
+      cursor: pointer; flex: 0 0 auto;
+    }
+    .ball-real:active { transform: scale(.92); }
+    .ball-real.stripe {
+      background:
+        radial-gradient(circle at 32% 28%, rgba(255,255,255,.5), rgba(255,255,255,0) 40%),
+        linear-gradient(#f7f7f7 0 24%, var(--ball-color) 24% 76%, #f7f7f7 76% 100%);
+    }
+    .ball-real .num {
+      width: 17px; height: 17px; border-radius: 50%; background: #fff; color: #111;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.62rem; font-weight: 800; line-height: 1;
+      box-shadow: 0 0 0 1px rgba(0,0,0,.18);
+    }
+    .ball-section.dead .ball-real { filter: grayscale(.75) brightness(.65); }
+
     /* Extra-small balls for 8-ball live entry (15 balls) */
     .ball-grid-15 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin: 8px 0; }
     .ball-xs {
@@ -458,7 +489,7 @@
       </div>
       <div class="card">
         <h2 style="font-size:1.1rem;margin-bottom:12px;">About</h2>
-        <p class="text-sm text-dim">APA Scorekeeper v<span id="app-version">1.6</span></p>
+        <p class="text-sm text-dim">APA Scorekeeper v<span id="app-version">1.7</span></p>
         <p class="text-sm text-dim mt-8">Offline scoring for APA 8-ball &amp; 9-ball league matches.</p>
         <p class="text-sm text-dim mt-8">Seeing an old version? Clear the offline cache and reload.</p>
         <div class="mt-8"><button class="btn btn-secondary" onclick="ui.forceUpdate()">Reload app &amp; clear cache</button></div>

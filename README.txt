@@ -1,7 +1,7 @@
 APA Scorekeeper - Offline Pool League Scoring App
 ===================================================
 
-Version: 1.6
+Version: 1.7
 By: Built for zappb44
 
 WHAT THIS APP DOES
@@ -29,6 +29,15 @@ FEATURES
 - Race chart reference (8-ball and 9-ball)
 - Works offline (PWA with service worker)
 - Installable to home screen
+
+NEW IN 1.7
+----------
+- 9-ball balls are drawn like real pool balls: solids 1-8, striped 9, white
+  number circle and a little shine.
+- The balls are split into sections: "On the table", one section per player,
+  and a dead-ball section. Tap a ball on the table and it drops into the
+  shooter's section; tap it in a section to put it back.
+- Each player's section header shows their points for the rack.
 
 NEW IN 1.6
 ----------

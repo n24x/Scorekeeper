@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────────────────────────────
-const APP_VERSION = '1.6';
+const APP_VERSION = '1.7';
 let currentView = 'home';
 let currentMatch = null;
 let currentRack = null;
@@ -475,8 +475,22 @@ const ui = {
             <div class="scorer-toggle">
               <button class="btn dead-btn ${rack._deadMode ? 'active' : 'btn-secondary'}" onclick="ui.toggleDeadMode()">💀 Dead ball</button>
             </div>
-            <div class="ball-grid-sm" id="live-ball-grid"></div>
-            <div class="live-total" id="live-ball-total"></div>
+            <div class="ball-section">
+              <div class="ball-section-title">On the table</div>
+              <div class="ball-row" id="live-ball-rack"></div>
+            </div>
+            <div class="ball-section home">
+              <div class="ball-section-title" id="live-title-home">${esc(m.homePlayer.name)} — 0 pts</div>
+              <div class="ball-row" id="live-balls-home"></div>
+            </div>
+            <div class="ball-section away">
+              <div class="ball-section-title" id="live-title-away">${esc(m.awayPlayer.name)} — 0 pts</div>
+              <div class="ball-row" id="live-balls-away"></div>
+            </div>
+            <div class="ball-section dead">
+              <div class="ball-section-title" id="live-title-dead">Dead balls — 0</div>
+              <div class="ball-row" id="live-balls-dead"></div>
+            </div>
           </div>
           `;
         }
@@ -712,6 +726,7 @@ const ui = {
     const side = dead ? 'dead' : currentShooter(rack);
 
     if (!rack._balls) rack._balls = [];
+    if (rack._balls.some(b => b.number === num)) return; // already placed
     const existing = rack._balls.find(b => b.number === num);
     // Tapping the same ball for the same player again removes it.
     let next = side;
@@ -782,44 +797,69 @@ const ui = {
     else showToast(`${nine ? '9-ball made' : 'Points target reached'} — ${name} wins rack ${rack.rackNumber}`);
   },
 
+  /** A pool ball that looks like one: solid 1-8, striped 9, white number. */
+  ballHtml(n, onclick) {
+    const colors = {
+      1: '#f2c200', 2: '#1f5fd0', 3: '#d62828', 4: '#6a2c91', 5: '#ef7d00',
+      6: '#0f7b3a', 7: '#7b1f1f', 8: '#141414', 9: '#f2c200'
+    };
+    const stripe = n === 9;
+    return `<button class="ball-real${stripe ? ' stripe' : ''}" style="--ball-color:${colors[n]}" onclick="${onclick}" aria-label="Ball ${n}"><span class="num">${n}</span></button>`;
+  },
+
   renderLiveBallGrid() {
     const m = currentMatch;
     const rack = currentRack;
-    if (!rack || !rack._balls) return;
-    const grid = document.getElementById('live-ball-grid');
-    const total = document.getElementById('live-ball-total');
-    if (!grid) return;
+    if (!m || !rack || !rack._balls) return;
+    const rackEl = document.getElementById('live-ball-rack');
+    if (!rackEl) return;
 
-    const colors = { 1: 'ball-1', 2: 'ball-2', 3: 'ball-3', 4: 'ball-4', 5: 'ball-5', 6: 'ball-6', 7: 'ball-7', 8: 'ball-8', 9: 'ball-9' };
-    let html = '';
-    for (let i = 1; i <= 9; i++) {
-      const ball = rack._balls.find(b => b.number === i);
-      let cls = colors[i] + ' ball-sm';
-      let owner = '';
-      if (ball) {
-        if (ball.dead) cls += ' picked-dead';
-        else if (ball.pocketedBy === 'home') { cls += ' picked-home'; owner = '<span class="ball-owner">🏠</span>'; }
-        else if (ball.pocketedBy === 'away') { cls += ' picked-away'; owner = '<span class="ball-owner">👥</span>'; }
-      }
-      html += `<button class="${cls}" onclick="ui.pickBall(${i})">${i}${owner}</button>`;
-    }
-    grid.innerHTML = html;
+    const balls = rack._balls;
+    const bySide = side => balls.filter(b => side === 'dead' ? b.dead : (!b.dead && b.pocketedBy === side));
+    const points = list => list.reduce((sum, b) => sum + (b.number === 9 ? 2 : 1), 0);
 
-    // Running total
-    const homeBalls = rack._balls.filter(b => !b.dead && b.pocketedBy === 'home');
-    const awayBalls = rack._balls.filter(b => !b.dead && b.pocketedBy === 'away');
-    const homePts = homeBalls.reduce((s, b) => s + (b.number === 9 ? 2 : 1), 0);
-    const awayPts = awayBalls.reduce((s, b) => s + (b.number === 9 ? 2 : 1), 0);
-    // Add previous racks' points
-    let prevHome = 0, prevAway = 0;
-    m.racks.forEach((r, i) => {
-      if (i !== m.racks.length - 1) {
-        prevHome += r.homeBallPoints || 0;
-        prevAway += r.awayBallPoints || 0;
-      }
+    // Balls still on the table.
+    const inPlay = new Set(balls.map(b => b.number));
+    const remaining = [1, 2, 3, 4, 5, 6, 7, 8, 9].filter(n => !inPlay.has(n));
+    rackEl.innerHTML = remaining.length
+      ? remaining.map(n => this.ballHtml(n, `ui.pickBall(${n})`)).join('')
+      : '<span class="text-dim text-sm">All balls are placed</span>';
+
+    const home = bySide('home');
+    const away = bySide('away');
+    const dead = bySide('dead');
+    const fill = (id, list) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.innerHTML = list.length
+        ? list.map(b => this.ballHtml(b.number, `ui.returnBall(${b.number})`)).join('')
+        : '<span class="text-dim text-sm">—</span>';
+    };
+    fill('live-balls-home', home);
+    fill('live-balls-away', away);
+    fill('live-balls-dead', dead);
+
+    const pts = n => `${n} pt${n === 1 ? '' : 's'}`;
+    const titles = {
+      'live-title-home': `${m.homePlayer.name} — ${pts(points(home))}`,
+      'live-title-away': `${m.awayPlayer.name} — ${pts(points(away))}`,
+      'live-title-dead': `Dead ball${dead.length === 1 ? '' : 's'} — ${dead.length}`
+    };
+    Object.keys(titles).forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = titles[id];
     });
-    total.innerHTML = `<span class="side home">🏠 ${esc(m.homePlayer.name)}: ${homePts} rack / ${prevHome + homePts} tot</span>
-      <span class="side away">👥 ${esc(m.awayPlayer.name)}: ${awayPts} rack / ${prevAway + awayPts} tot</span>`;
+  },
+
+  /** Tap a ball in a player's section (or the dead section) to put it back. */
+  async returnBall(num) {
+    const rack = currentRack;
+    if (!rack || rack.winner) return;
+    rack._balls = (rack._balls || []).filter(b => b.number !== num);
+    rack.balls = rack._balls.map(b => ({ number: b.number, pocketedBy: b.dead ? null : (b.pocketedBy || null), dead: !!b.dead }));
+    this.renderLiveBallGrid();
+    this.updateLiveScoreboard();
+    await saveMatch(currentMatch);
   },
 
   // ── Rack actions ──
