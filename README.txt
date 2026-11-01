@@ -1,7 +1,7 @@
 APA Scorekeeper - Offline Pool League Scoring App
 ===================================================
 
-Version: 1.3
+Version: 1.5
 By: Built for zappb44
 
 WHAT THIS APP DOES
@@ -29,6 +29,26 @@ FEATURES
 - Race chart reference (8-ball and 9-ball)
 - Works offline (PWA with service worker)
 - Installable to home screen
+
+NEW IN 1.5
+----------
+- 9-ball stops the moment a player reaches their points target: the match is
+  declared there, and points above the target are not counted.
+- Pocketing the 9-ball ends the rack automatically, and ends the match if it
+  reaches the target.
+- The big 9-ball score updates ball by ball as you enter them.
+- "At the table" buttons for both formats: tap whoever is shooting. An inning
+  is counted for you when the player who did not break finishes their turn,
+  exactly like the scoresheet. Manual +/- stays for corrections.
+- Each rack shows who breaks; the break alternates after the lag winner.
+- Settings shows the build number and has "Reload app & clear cache".
+
+NEW IN 1.4
+----------
+- The app updates itself on the next load (network-first service worker),
+  instead of showing a cached build.
+- The Summary tab includes rack-by-rack detail: who won each rack and the
+  innings, with a checkbox to turn it off.
 
 NEW IN 1.3
 ----------

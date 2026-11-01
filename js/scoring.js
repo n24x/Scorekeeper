@@ -190,6 +190,8 @@ function createRack(match, rackNumber) {
   return {
     id: 'r_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
     rackNumber: rackNumber,
+    breaker: null,          // 'home' | 'away' — who breaks this rack
+    turn: null,             // 'home' | 'away' — who is at the table now
     homeWonLag: false,
     awayWonLag: false,
     // 8-ball fields
@@ -228,19 +230,71 @@ function setLagWinner(match, side) {
 }
 
 /** Start a new rack in the match */
+function opposite(side) { return side === 'home' ? 'away' : 'home'; }
+
 function startRack(match) {
   const rackNumber = match.racks.length + 1;
   const rack = createRack(match, rackNumber);
-  // Lag winner of rack 1 is match lag winner; subsequent racks alternate
-  // (winner of previous rack generally breaks, but in APA the breaker alternates)
   if (rackNumber === 1 && match.lagWinner) {
     rack.homeWonLag = (match.lagWinner === 'home');
     rack.awayWonLag = (match.lagWinner === 'away');
   }
+  // The lag winner breaks game one; after that the break alternates. The
+  // breaker is stored on the rack so the scorekeeper can change it if their
+  // league uses a different order.
+  const prev = match.racks[match.racks.length - 1];
+  rack.breaker = rackNumber === 1
+    ? (match.lagWinner || 'home')
+    : (prev && prev.breaker ? opposite(prev.breaker) : (match.lagWinner || 'home'));
+  rack.turn = rack.breaker;
   match.racks.push(rack);
   match.status = 'in_progress';
   match.updatedAt = Date.now();
   return rack;
+}
+
+/** Change who is at the table.
+ *  An inning is a full cycle, so it only completes when the player who did
+ *  NOT break finishes their turn (APA scoresheet: the bottom player misses or
+ *  fouls). Returns true when an inning was counted. */
+function setTurn(match, rack, side) {
+  if (!rack || rack.winner || (side !== 'home' && side !== 'away')) return false;
+  if (!rack.turn) rack.turn = rack.breaker || 'home';
+  if (side === rack.turn) return false;
+
+  const outgoing = rack.turn;
+  const nonBreaker = opposite(rack.breaker || 'home');
+  const countedInning = outgoing === nonBreaker;
+  if (countedInning) rack.innings = (rack.innings || 0) + 1;
+  rack.turn = side;
+  match.updatedAt = Date.now();
+  return countedInning;
+}
+
+/** Who is at the table, or the breaker if the turn has not been touched. */
+function currentShooter(rack) {
+  return rack.turn || rack.breaker || 'home';
+}
+
+/** 9-ball points including the rack currently being scored (balls entered but
+ *  the rack not yet ended). Used to stop the match the moment someone reaches
+ *  their target. */
+function liveNineBallTotals(match) {
+  const out = { home: 0, away: 0 };
+  const multiplier = match.suddenDeath ? 2 : 1;
+  match.racks.forEach((r, i) => {
+    const isLive = (i === match.racks.length - 1) && !r.winner;
+    if (isLive) {
+      (r.balls || []).forEach(b => {
+        if (b.dead || !b.pocketedBy) return;
+        out[b.pocketedBy] += (b.number === 9 ? 2 : 1) * multiplier;
+      });
+    } else {
+      out.home += r.homeBallPoints || 0;
+      out.away += r.awayBallPoints || 0;
+    }
+  });
+  return out;
 }
 
 /** End a rack with the given end type and winner */
@@ -611,6 +665,10 @@ if (typeof module !== 'undefined') module.exports = {
   getTotalDefensiveShots,
   getTotalTimeouts,
   forfeitMatch,
+  opposite,
+  setTurn,
+  currentShooter,
+  liveNineBallTotals,
   enableSuddenDeath,
   getSuddenDeathPoints,
   nextSuddenDeathRackValue,

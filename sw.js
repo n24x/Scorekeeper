@@ -1,7 +1,7 @@
 // APA Scorekeeper Service Worker
 // Network-first for the app shell and code (so a new deploy shows up on the
 // first reload), cache-first for icons. Everything still works offline.
-const CACHE_NAME = 'apa-scorekeeper-v1.4';
+const CACHE_NAME = 'apa-scorekeeper-v1.5';
 const APP_URLS = [
   './',
   './index.html',

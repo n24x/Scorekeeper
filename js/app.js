@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────────────────────────────
-const APP_VERSION = '1.4';
+const APP_VERSION = '1.5';
 let currentView = 'home';
 let currentMatch = null;
 let currentRack = null;
@@ -332,7 +332,17 @@ const ui = {
     const m = currentMatch;
     // Set global currentRack for use by rack modal functions
     currentRack = m.racks.length > 0 ? m.racks[m.racks.length - 1] : null;
-    const score = getRunningScore(m);
+    let score = getRunningScore(m);
+    // 9-ball is scored live: show the points earned so far in the rack too,
+    // capped at the target (excess points are never counted).
+    if (m.format === '9-ball' && m.status === 'in_progress') {
+      const live = liveNineBallTotals(m);
+      score = {
+        ...score,
+        home: Math.min(live.home, m.homeRaceTo),
+        away: Math.min(live.away, m.awayRaceTo)
+      };
+    }
     const totalInnings = getTotalInnings(m);
 
     let html = `
@@ -344,12 +354,12 @@ const ui = {
         <div class="score-row" style="margin-top:12px;">
           <div class="score-side">
             <div class="score-name">${esc(m.homePlayer.name)} (SL${m.homePlayer.skillLevel})</div>
-            <div class="score-value">${score.home}<span class="target"> / ${score.homeTarget}</span></div>
+            <div class="score-value" id="score-home">${score.home}<span class="target"> / ${score.homeTarget}</span></div>
           </div>
           <div class="score-divider"></div>
           <div class="score-side">
             <div class="score-name">${esc(m.awayPlayer.name)} (SL${m.awayPlayer.skillLevel})</div>
-            <div class="score-value">${score.away}<span class="target"> / ${score.awayTarget}</span></div>
+            <div class="score-value" id="score-away">${score.away}<span class="target"> / ${score.awayTarget}</span></div>
           </div>
         </div>
         <div class="score-vs">${m.homeTeam} vs ${m.awayTeam}</div>
@@ -414,7 +424,14 @@ const ui = {
             <button class="btn btn-primary" style="width:auto;padding:10px 18px;" onclick="ui.endRackForm()">End Rack</button>
           </div>
 
-          <div class="section-title">Innings This Rack</div>
+          <div class="section-title">At the table</div>
+          <div class="scorer-toggle">
+            <button class="btn turn-btn ${currentShooter(rack) === 'home' ? 'active' : 'btn-secondary'}" data-side="home" onclick="ui.setTurn('home')">🏠 ${esc(m.homePlayer.name)}</button>
+            <button class="btn turn-btn ${currentShooter(rack) === 'away' ? 'active' : 'btn-secondary'}" data-side="away" onclick="ui.setTurn('away')">👥 ${esc(m.awayPlayer.name)}</button>
+          </div>
+          <div class="text-center text-sm text-dim" id="turn-note">${rack.breaker === 'away' ? esc(m.awayPlayer.name) : esc(m.homePlayer.name)} breaks · ${rack.innings || 0} inning${(rack.innings || 0) === 1 ? '' : 's'}</div>
+
+          <div class="section-title" style="margin-top:14px;">Innings This Rack</div>
           <div class="stepper">
             <button class="step-btn" onclick="ui.adjustInnings(-1)">−</button>
             <span class="step-count" id="live-innings">${rack.innings || 0}</span>
@@ -599,6 +616,35 @@ const ui = {
   },
 
   // ── Live scoring controls ──
+  /** Tap the player who is now at the table. An inning is counted when the
+   *  player who did not break finishes their turn - same as the scoresheet. */
+  async setTurn(side) {
+    const m = currentMatch;
+    const rack = currentRack;
+    if (!m || !rack || rack.winner) return;
+    const counted = setTurn(m, rack, side);
+    await saveMatch(m);
+
+    document.querySelectorAll('.turn-btn').forEach(b => {
+      const active = b.dataset.side === side;
+      b.classList.toggle('active', active);
+      b.classList.toggle('btn-secondary', !active);
+    });
+    const inn = document.getElementById('live-innings');
+    if (inn) inn.textContent = rack.innings || 0;
+    this.updateTurnNote(counted);
+  },
+
+  updateTurnNote(counted) {
+    const m = currentMatch;
+    const rack = currentRack;
+    const note = document.getElementById('turn-note');
+    if (!m || !rack || !note) return;
+    const breakerName = rack.breaker === 'away' ? m.awayPlayer.name : m.homePlayer.name;
+    const inn = rack.innings || 0;
+    note.textContent = `${breakerName} breaks · ${inn} inning${inn === 1 ? '' : 's'}${counted ? ' (+1)' : ''}`;
+  },
+
   async adjustInnings(delta) {
     const rack = currentRack;
     if (!rack || rack.winner) return;
@@ -606,6 +652,7 @@ const ui = {
     rack.innings = newVal;
     const el = document.getElementById('live-innings');
     if (el) el.textContent = newVal;
+    this.updateTurnNote(false);
     await saveMatch(currentMatch);
   },
 
@@ -671,8 +718,63 @@ const ui = {
     if (existing && existing.pocketedBy === side && !existing.dead && side !== 'dead') next = null;
     rack._balls = rack._balls.filter(b => b.number !== num);
     if (next) rack._balls.push({ number: num, pocketedBy: side === 'dead' ? null : side, dead: side === 'dead' });
+    // Keep the saved rack in step with the live grid so running totals and the
+    // "match over at target" check see the balls already pocketed.
+    rack.balls = rack._balls.map(b => ({ number: b.number, pocketedBy: b.pocketedBy || 'home', dead: !!b.dead }));
     this.renderLiveBallGrid();
+    this.updateLiveScoreboard();
     await saveMatch(currentMatch);
+    await this.checkNineBallProgress();
+  },
+
+  /** Keep the big score in step with the balls already pocketed this rack. */
+  updateLiveScoreboard() {
+    const m = currentMatch;
+    if (!m || m.format !== '9-ball' || m.status !== 'in_progress') return;
+    const live = liveNineBallTotals(m);
+    const home = Math.min(live.home, m.homeRaceTo);
+    const away = Math.min(live.away, m.awayRaceTo);
+    const h = document.getElementById('score-home');
+    const a = document.getElementById('score-away');
+    if (h) h.innerHTML = `${home}<span class="target"> / ${m.homeRaceTo}</span>`;
+    if (a) a.innerHTML = `${away}<span class="target"> / ${m.awayRaceTo}</span>`;
+  },
+
+  /** 9-ball: pocketing the 9 ends the rack; reaching the points target ends
+   *  the match on the spot (excess points are not counted). */
+  async checkNineBallProgress() {
+    const m = currentMatch;
+    const rack = currentRack;
+    if (!m || m.format !== '9-ball' || !rack || rack.winner) return;
+
+    const nine = (rack._balls || []).find(b => b.number === 9 && !b.dead && b.pocketedBy);
+    const totals = liveNineBallTotals(m);
+
+    let winner = null;
+    let endType = 'STANDARD';
+    if (nine) {
+      winner = nine.pocketedBy;
+    } else if (totals.home >= m.homeRaceTo) {
+      winner = 'home'; endType = 'END_RACK_EARLY';
+    } else if (totals.away >= m.awayRaceTo) {
+      winner = 'away'; endType = 'END_RACK_EARLY';
+    }
+    if (!winner) return;
+
+    rack.balls = (rack._balls || []).map(b => ({
+      number: b.number,
+      pocketedBy: b.pocketedBy || 'home',
+      dead: b.dead || false
+    }));
+    endRack(m, rack, endType, winner);
+    delete rack._balls;
+    delete rack._scorerSide;
+    await saveMatch(m);
+    this.renderMatch();
+
+    const name = winner === 'home' ? m.homePlayer.name : m.awayPlayer.name;
+    if (m.status === 'completed') showToast(`${name} wins the match!`);
+    else showToast(`${nine ? '9-ball made' : 'Points target reached'} — ${name} wins rack ${rack.rackNumber}`);
   },
 
   renderLiveBallGrid() {
@@ -734,7 +836,8 @@ const ui = {
     currentRack = rack;
     await saveMatch(currentMatch);
     this.renderMatch();
-    showToast(`Rack ${rack.rackNumber} started`);
+    const breakerName = rack.breaker === 'away' ? currentMatch.awayPlayer.name : currentMatch.homePlayer.name;
+    showToast(`Rack ${rack.rackNumber} — ${breakerName} breaks`);
   },
 
   endRackForm() {

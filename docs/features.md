@@ -29,7 +29,7 @@ needs APA's servers/league account and will not be built.
 | Games Must Win race chart | Server-supplied `raceTo` | Local chart SL2–SL7 (+ SL8/9 for 9-ball) | Implemented |
 | Ball-by-ball entry | **Not used in 8-ball** — the official app asks who won and how | Removed in v1.3 (the 15-ball grid is gone) | Implemented |
 | Rack end types | Standard, 8-on-the-Break, 8-ball Break-and-Run, Early 8, Scratch on 8, Wrong pocket | Same set, asked in two steps (who won → how it ended) | Implemented |
-| Innings | Increment/decrement per rack | Increment/decrement per rack | Implemented |
+| Innings | Auto-counted from the turn (bottom player misses) | At-the-table toggle counts innings automatically; manual +/- for corrections | Implemented |
 | Defensive shots | Per-player counters | Per-player counters | Implemented |
 | Time-outs | 1 per game for SL4+, 2 for SL2/SL3 | Same rule since v1.1 (was 1 for everyone) | Implemented |
 | **3-Point Scoring System** | `editGame.pMatchInfo.matchPoints` — 3-0 / 2-1 / 2-0 | Computed on completion since v1.1 | Implemented |
@@ -47,6 +47,8 @@ needs APA's servers/league account and will not be built.
 | Dead balls | Auto on scratch/foul, 9 never dead (spotted) | Stalemate kills all balls; 9 cannot be marked dead since v1.1 | Partial — scratch handling is manual |
 | Excess points not marked | Cap at the player's target | Capped since v1.1 | Implemented |
 | Sudden Death | Every ball worth double | Doubling since v1.1 | Implemented |
+| Live points + auto win | Score climbs as balls drop; match ends at the target | Live score since v1.5; match stops at the target, excess points dropped | Implemented |
+| 9-ball ends the rack | Yes | Pocketing the 9 closes the rack automatically since v1.5 | Implemented |
 | Match points | `Score of Match` chart from the losing player's ball count | Not computed (chart not in the app binary) | Planned |
 
 ## Match flow and UX

@@ -217,6 +217,47 @@ test('undoing an SD rack rolls the SD counter back', () => {
   assert.strictEqual(m.suddenDeathRacks, 0);
 });
 
+console.log('turn tracking and 9-ball live scoring');
+test('rack 1 breaks with the lag winner, then alternates', () => {
+  const m = new8(5, 5);
+  m.lagWinner = 'away';
+  const r1 = S.startRack(m);
+  const r2 = S.startRack(m);
+  assert.strictEqual(r1.breaker, 'away');
+  assert.strictEqual(r2.breaker, 'home');
+  assert.strictEqual(S.currentShooter(r1), 'away');
+});
+test('an inning counts when the non-breaker leaves the table', () => {
+  const m = new8(5, 5);
+  m.lagWinner = 'home';
+  const r = S.startRack(m);
+  assert.strictEqual(S.setTurn(m, r, 'away'), false); // breaker missed, no inning yet
+  assert.strictEqual(r.innings, 0);
+  assert.strictEqual(S.setTurn(m, r, 'home'), true);  // non-breaker missed -> 1 inning
+  assert.strictEqual(r.innings, 1);
+  assert.strictEqual(S.setTurn(m, r, 'away'), false);
+  assert.strictEqual(S.setTurn(m, r, 'home'), true);
+  assert.strictEqual(r.innings, 2);
+});
+test('tapping the same player twice does nothing', () => {
+  const m = new8(5, 5);
+  m.lagWinner = 'home';
+  const r = S.startRack(m);
+  assert.strictEqual(S.setTurn(m, r, 'home'), false);
+  assert.strictEqual(r.innings, 0);
+});
+test('live 9-ball totals include balls entered in the current rack', () => {
+  const m = new9(3, 3);
+  const r = S.startRack(m);
+  r.balls = [
+    { number: 1, pocketedBy: 'home', dead: false },
+    { number: 2, pocketedBy: 'home', dead: false },
+    { number: 9, pocketedBy: 'away', dead: false },
+    { number: 4, pocketedBy: null, dead: true }
+  ];
+  assert.deepStrictEqual(S.liveNineBallTotals(m), { home: 2, away: 2 });
+});
+
 console.log('limits and labels');
 test('time-outs: SL4+ get 1 per game, SL2-3 get 2', () => {
   assert.strictEqual(S.maxTimeoutsPerRack(7), 1);
