@@ -61,9 +61,23 @@ needs APA's servers/league account and will not be built.
 | Submit to league | GraphQL submission, signed scoresheet | JSON export/import only | Out of scope |
 | Tablet layout | `ScoreboardTablet`, `MatchListTablet` | Responsive single column | Planned |
 
-## Team match (the biggest structural gap)
+## Team match — deliberately not built
 
 The official app scores a **team match**: five player matches on one scoresheet, put-up
 order, running match points (max 15 for 8-ball), and a "confirm scores with opponent"
-step. This app scores one player match at a time. Adding the container is the next large
-piece of work — see `docs/team-match-plan.md`.
+step. This app scores one singles match at a time and rolls several of them into a text
+report.
+
+Decision: the team-match container is out of scope. This app exists as an **outage
+fallback** — when the official app is down, score the singles match, then email the
+summary or copy it into the official app later. `docs/team-match-plan.md` is kept only
+as a record of what that would have involved.
+
+## Handover (v1.2)
+
+| Need | Where |
+| --- | --- |
+| Name + team without building a roster | New Match → type the name / team fields |
+| One match, readable | Match → Match Summary → Copy / Email |
+| Several matches at once | Summary tab → Today / 7 days / All → tick matches → Copy / Email / Share |
+| Machine backup | Settings → Export Backup (JSON) |

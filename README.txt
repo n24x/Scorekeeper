@@ -1,7 +1,7 @@
 APA Scorekeeper - Offline Pool League Scoring App
 ===================================================
 
-Version: 1.1
+Version: 1.2
 By: Built for zappb44
 
 WHAT THIS APP DOES
@@ -29,6 +29,24 @@ FEATURES
 - Race chart reference (8-ball and 9-ball)
 - Works offline (PWA with service worker)
 - Installable to home screen
+
+NEW IN 1.2 (outage fallback)
+----------------------------
+Built to be used when the official APA app is down: score the singles match,
+then hand the numbers over by email or by typing them into the official app
+later.
+
+- Type a player name and a team name straight into New Match. No roster
+  needed - the roster is still there if you want it.
+- "Match Summary" on any finished match shows the full scoresheet as plain
+  text: players and skill levels, final score, match points, racks, innings,
+  defensive shots, time outs, lag and a rack-by-rack log.
+- Copy or Email buttons on that summary. Copy also works when you want to
+  paste it into the official app or a message.
+- New "Summary" tab: pick Today / 7 days / All, tick the matches you want,
+  give the report a title ("Week 7"), and get one text block covering every
+  match plus totals. Copy, Email or Share it.
+- Forfeits are labelled as forfeits instead of showing a fake 0-0 score.
 
 NEW IN 1.1
 ----------

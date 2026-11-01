@@ -1,11 +1,12 @@
 // APA Scorekeeper Service Worker
 // Caches all app resources for offline use
-const CACHE_NAME = 'apa-scorekeeper-v1.1';
+const CACHE_NAME = 'apa-scorekeeper-v1.2';
 const APP_URLS = [
   './',
   './index.html',
   './manifest.json',
   './js/scoring.js',
+  './js/summary.js',
   './js/db.js',
   './js/app.js',
   './icon-192.png',

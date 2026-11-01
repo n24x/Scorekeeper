@@ -224,6 +224,31 @@
     .badge-senior { background: var(--yellow); color: #000; }
     .badge-mp { background: var(--yellow); color: #000; }
     .sd-banner { border: 1px solid var(--yellow); }
+    /* Summary / report */
+    .report-text {
+      width: 100%; min-height: 260px; resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.78rem; line-height: 1.45; white-space: pre;
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--accent); border-radius: 8px; padding: 12px;
+      -webkit-user-select: text; user-select: text;
+    }
+    .pick-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 0; border-bottom: 1px solid var(--surface2);
+    }
+    .pick-row:last-child { border-bottom: none; }
+    .pick-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--primary); flex: 0 0 auto; }
+    .pick-main { flex: 1; min-width: 0; }
+    .pick-title { font-weight: 600; font-size: 0.9rem; }
+    .pick-sub { color: var(--text-dim); font-size: 0.75rem; }
+    .seg { display: flex; gap: 6px; margin-bottom: 12px; }
+    .seg button {
+      flex: 1; padding: 8px 6px; font-size: 0.8rem; font-weight: 600;
+      background: var(--surface2); color: var(--text-dim);
+      border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+    }
+    .seg button.active { background: var(--accent); color: var(--text); border-color: var(--primary); }
     .badge-completed { background: var(--green); color: #064e3b; }
     .badge-in-progress { background: var(--blue); color: #000; }
     .badge-setup { background: var(--surface2); color: var(--text-dim); }
@@ -433,7 +458,7 @@
       </div>
       <div class="card">
         <h2 style="font-size:1.1rem;margin-bottom:12px;">About</h2>
-        <p class="text-sm text-dim">APA Scorekeeper v1.1</p>
+        <p class="text-sm text-dim">APA Scorekeeper v1.2</p>
         <p class="text-sm text-dim mt-8">Offline scoring for APA 8-ball & 9-ball league matches.</p>
         <p class="text-sm text-dim mt-8">Based on the APA Equalizer® handicap system. Not affiliated with or endorsed by the American Poolplayers Association.</p>
         <p class="text-sm text-dim mt-8">All data stored locally on your device. Works fully offline.</p>
@@ -443,6 +468,11 @@
     <!-- Race chart view -->
     <div class="view" id="view-race-chart">
       <div id="race-chart-content"></div>
+    </div>
+
+    <!-- Summary / report view -->
+    <div class="view" id="view-report">
+      <div id="report-content"></div>
     </div>
 
     <!-- Bottom Nav -->
@@ -455,6 +485,9 @@
       </button>
       <button class="nav-btn" data-view="race-chart" onclick="ui.switchView('race-chart')">
         <span class="nav-icon">📊</span><span>Race Chart</span>
+      </button>
+      <button class="nav-btn" data-view="report" onclick="ui.switchView('report')">
+        <span class="nav-icon">📋</span><span>Summary</span>
       </button>
       <button class="nav-btn" data-view="settings" onclick="ui.switchView('settings')">
         <span class="nav-icon">⚙️</span><span>Settings</span>
@@ -471,6 +504,7 @@
   <div class="toast" id="toast" style="display:none;"></div>
 
   <script src="./js/scoring.js"></script>
+  <script src="./js/summary.js"></script>
   <script src="./js/db.js"></script>
   <script src="./js/app.js"></script>
 </body>

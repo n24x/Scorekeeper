@@ -20,6 +20,49 @@ let modalStack = [];
 function $(id) { return document.getElementById(id); }
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+/** Skill-level <option> list for the typed-name pickers (APA: new players are SL3). */
+function slOptions(format, selected) {
+  const levels = format === '9-ball' ? NINE_BALL_Skill_LEVELS : EIGHT_BALL_Skill_LEVELS;
+  const def = selected || 3;
+  return levels.map(n => `<option value="${n}"${n === def ? ' selected' : ''}>SL${n}</option>`).join('');
+}
+
+/** Copy text to the clipboard, with a fallback for browsers without the async API. */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) { /* fall through */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+/** Open the user's mail app with the summary prefilled. Long bodies are copied instead. */
+async function emailText(subject, body) {
+  const url = 'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  if (url.length > 1800) {
+    const ok = await copyText(body);
+    showToast(ok ? 'Summary copied — paste it into your email' : 'Summary is too long for a mail link');
+    return;
+  }
+  window.location.href = url;
+}
+
 function showToast(msg, duration = 2500) {
   const t = $('toast');
   t.textContent = msg;
@@ -54,13 +97,14 @@ const ui = {
     document.querySelectorAll(`.nav-btn[data-view="${view}"]`).forEach(b => b.classList.add('active'));
     currentView = view;
 
-    const titles = { home: 'APA Scorekeeper', teams: 'Teams & Players', match: 'Match', settings: 'Settings', 'race-chart': 'Race Charts' };
+    const titles = { home: 'APA Scorekeeper', teams: 'Teams & Players', match: 'Match', settings: 'Settings', 'race-chart': 'Race Charts', report: 'Match Summary' };
     $('page-title').textContent = titles[view] || 'APA Scorekeeper';
 
     // Refresh data when switching views
     if (view === 'home') this.refreshMatchList();
     if (view === 'teams') this.refreshTeamList();
     if (view === 'race-chart') this.renderRaceChart();
+    if (view === 'report') this.renderReport();
     if (view !== 'match') this.keepAwake(false);
   },
 
@@ -97,8 +141,8 @@ const ui = {
             <div class="font-bold">${esc(m.awayPlayer.name)} (${m.awayPlayer.skillLevel})</div>
           </div>
           <div class="text-center">
-            <div class="text-lg font-bold">${score.home} - ${score.away}</div>
-            <div class="text-sm text-dim">to ${score.homeTarget} / ${score.awayTarget}</div>
+            <div class="text-lg font-bold">${m.forfeit ? 'Forfeit' : `${score.home} - ${score.away}`}</div>
+            <div class="text-sm text-dim">${m.forfeit ? '' : `to ${score.homeTarget} / ${score.awayTarget}`}</div>
           </div>
         </div>
         ${winnerText ? `<div class="text-sm mt-8" style="color:var(--green);">🏆 ${winnerText}</div>` : ''}
@@ -120,12 +164,7 @@ const ui = {
     teams = await getAllTeams();
     players = await getAllPlayers();
 
-    if (players.length === 0) {
-      showModal(`<div class="modal-title">No Players Yet</div>
-        <p class="text-dim">You need to add teams and players first.</p>
-        <div class="mt-16"><button class="btn btn-primary" onclick="closeModal();ui.switchView('teams');">Go to Teams</button></div>`);
-      return;
-    }
+    // No roster is fine: the form accepts typed names for a one-off match.
 
     const formatOpts = '<option value="8-ball">8-Ball</option><option value="9-ball">9-Ball</option>';
     // Same four choices the official APA Scorekeeper app offers.
@@ -154,12 +193,34 @@ const ui = {
         <select id="nm-table">${tableOpts}</select>
       </div>
       <div class="form-group">
-        <label>Home Player</label>
+        <label>Home team (optional)</label>
+        <input type="text" id="nm-home-team" placeholder="e.g. Sharks" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Away team (optional)</label>
+        <input type="text" id="nm-away-team" placeholder="e.g. Eagles" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Home player</label>
         <select id="nm-home">${playerOpts}</select>
       </div>
       <div class="form-group">
-        <label>Away Player</label>
+        <label>…or type the home name</label>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="nm-home-name" placeholder="Name" autocomplete="off" style="flex:2;">
+          <select id="nm-home-sl" style="flex:1;">${slOptions('8-ball')}</select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Away player</label>
         <select id="nm-away">${playerOpts}</select>
+      </div>
+      <div class="form-group">
+        <label>…or type the away name</label>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="nm-away-name" placeholder="Name" autocomplete="off" style="flex:2;">
+          <select id="nm-away-sl" style="flex:1;">${slOptions('8-ball')}</select>
+        </div>
       </div>
       <div id="nm-race-preview" class="text-center text-dim text-sm mt-8"></div>
       <div class="mt-16">
@@ -168,57 +229,89 @@ const ui = {
       <div style="height:20px;"></div>
     `);
 
-    // Update race preview when players change
-    document.getElementById('nm-home').addEventListener('change', () => this.updateMatchForm());
-    document.getElementById('nm-away').addEventListener('change', () => this.updateMatchForm());
+    // Update race preview when anything that affects the race changes
+    ['nm-home', 'nm-away', 'nm-home-name', 'nm-away-name', 'nm-home-sl', 'nm-away-sl']
+      .forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => this.updateMatchForm());
+      });
     this.updateMatchForm();
+  },
+
+  /** Resolve one side of the New Match form: typed name wins over a roster pick. */
+  resolveSide(prefix, format) {
+    const typedEl = document.getElementById(prefix + '-name');
+    const typed = typedEl ? typedEl.value.trim() : '';
+    const slEl = document.getElementById(prefix + '-sl');
+    const typedSL = slEl ? parseInt(slEl.value) : 3;
+
+    if (typed) return { id: null, name: typed, skillLevel: typedSL, typed: true, teamId: null };
+
+    const sel = document.getElementById(prefix);
+    const id = sel ? parseInt(sel.value) : NaN;
+    const p = players.find(x => x.id === id);
+    if (!p) return null;
+    const sl = format === '9-ball'
+      ? (p.skillLevel9 || p.skillLevel || 3)
+      : (p.skillLevel8 || p.skillLevel || 3);
+    return { id: p.id, name: p.name, skillLevel: sl, typed: false, teamId: p.teamId };
   },
 
   updateMatchForm() {
     const format = document.getElementById('nm-format').value;
-    const homeId = parseInt(document.getElementById('nm-home').value);
-    const awayId = parseInt(document.getElementById('nm-away').value);
     const preview = document.getElementById('nm-race-preview');
-    if (!homeId || !awayId) { preview.textContent = 'Select both players to see race targets'; return; }
-    const home = players.find(p => p.id === homeId);
-    const away = players.find(p => p.id === awayId);
-    if (!home || !away) return;
+    if (!preview) return;
+
+    // 8-ball offers SL2-SL7, 9-ball SL1-SL9 - rebuild the pickers when the format changes.
+    if (this._lastFormat !== format) {
+      this._lastFormat = format;
+      ['nm-home-sl', 'nm-away-sl'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = slOptions(format, parseInt(el.value) || 3);
+      });
+    }
+    const home = this.resolveSide('nm-home', format);
+    const away = this.resolveSide('nm-away', format);
+    if (!home || !away) { preview.textContent = 'Pick a player or type both names'; return; }
+    if (!home.typed && !away.typed && home.id && home.id === away.id) {
+      preview.textContent = '⚠️ Pick two different players';
+      return;
+    }
     let txt = '';
     if (format === '8-ball') {
       const race = get8BallRace(home.skillLevel, away.skillLevel);
-      if (race) txt = `${esc(home.name)} races to ${race.home} — ${esc(away.name)} races to ${race.away}`;
+      if (race) txt = `${home.name} races to ${race.home} — ${away.name} races to ${race.away}`;
     } else {
       const hp = get9BallPoints(home.skillLevel);
       const ap = get9BallPoints(away.skillLevel);
-      txt = `${esc(home.name)} needs ${hp} pts — ${esc(away.name)} needs ${ap} pts`;
+      txt = `${home.name} needs ${hp} pts — ${away.name} needs ${ap} pts`;
     }
-    if (homeId === awayId) txt = '⚠️ Select two different players';
     preview.textContent = txt;
   },
 
   async createMatchFromForm() {
     const format = document.getElementById('nm-format').value;
     const tableSize = document.getElementById('nm-table').value;
-    const homeId = parseInt(document.getElementById('nm-home').value);
-    const awayId = parseInt(document.getElementById('nm-away').value);
+    const home = this.resolveSide('nm-home', format);
+    const away = this.resolveSide('nm-away', format);
 
-    if (!homeId || !awayId) { showToast('Please select both players'); return; }
-    if (homeId === awayId) { showToast('Home and away must be different players'); return; }
+    if (!home || !away) { showToast('Pick a player or type both names'); return; }
+    if (!home.typed && !away.typed && home.id && home.id === away.id) {
+      showToast('Home and away must be different players');
+      return;
+    }
 
-    const home = players.find(p => p.id === homeId);
-    const away = players.find(p => p.id === awayId);
-    const homeTeam = teams.find(t => t.id === home.teamId);
-    const awayTeam = teams.find(t => t.id === away.teamId);
-
-    // Use the correct skill level for the format
-    const homeSL = format === '9-ball' ? (home.skillLevel9 || home.skillLevel || 3) : (home.skillLevel8 || home.skillLevel || 3);
-    const awaySL = format === '9-ball' ? (away.skillLevel9 || away.skillLevel || 3) : (away.skillLevel8 || away.skillLevel || 3);
+    // Team names: typed value first, then the roster team of a picked player.
+    const typedHomeTeam = (document.getElementById('nm-home-team').value || '').trim();
+    const typedAwayTeam = (document.getElementById('nm-away-team').value || '').trim();
+    const homeTeam = home.teamId ? teams.find(t => t.id === home.teamId) : null;
+    const awayTeam = away.teamId ? teams.find(t => t.id === away.teamId) : null;
 
     const match = createMatch(format,
-      homeTeam ? homeTeam.name : 'Home',
-      awayTeam ? awayTeam.name : 'Away',
-      { id: home.id, name: home.name, skillLevel: homeSL },
-      { id: away.id, name: away.name, skillLevel: awaySL }
+      typedHomeTeam || (homeTeam ? homeTeam.name : 'Home'),
+      typedAwayTeam || (awayTeam ? awayTeam.name : 'Away'),
+      { id: home.id, name: home.name, skillLevel: home.skillLevel },
+      { id: away.id, name: away.name, skillLevel: away.skillLevel }
     );
     match.tableSize = tableSize;
     await saveMatch(match);
@@ -491,8 +584,9 @@ const ui = {
           <div class="stat-row"><span class="stat-label">Racks Played</span><span class="stat-value">${summary.racksPlayed}</span></div>
         </div>
         <div class="mt-16">
-          <div class="btn-row">
-            <button class="btn btn-secondary" onclick="ui.exportMatchSummary()">Export Summary</button>
+          <button class="btn btn-primary" onclick="ui.showMatchText()">📋 Match Summary</button>
+          <div class="btn-row mt-8">
+            <button class="btn btn-secondary" onclick="ui.exportMatchSummary()">JSON</button>
             <button class="btn btn-danger" onclick="ui.deleteMatch()">Delete Match</button>
           </div>
         </div>
@@ -1017,6 +1111,173 @@ const ui = {
     a.click();
     URL.revokeObjectURL(url);
     showToast('Summary exported');
+  },
+
+  // ── Plain-text summaries (email / copy into the official app) ──
+  showMatchText() {
+    if (!currentMatch) return;
+    const text = formatMatchSummary(currentMatch);
+    showModal(`<div class="modal-title">Match Summary <span class="modal-close" onclick="closeModal()">×</span></div>
+      <p class="text-sm text-dim mb-8">Email it, or copy it and type it into the official app.</p>
+      <textarea class="report-text" id="match-text" readonly>${esc(text)}</textarea>
+      <div class="btn-row mt-8">
+        <button class="btn btn-primary" onclick="ui.copyMatchText()">Copy</button>
+        <button class="btn btn-secondary" onclick="ui.emailMatchText()">Email</button>
+      </div>
+      <div style="height:16px;"></div>
+    `);
+  },
+
+  async copyMatchText() {
+    const text = formatMatchSummary(currentMatch);
+    const ok = await copyText(text);
+    if (ok) { showToast('Summary copied'); return; }
+    // Clipboard blocked (file:// or no permission): leave it selected so the
+    // user can just press their keyboard/app Copy button.
+    const ta = document.getElementById('match-text');
+    if (ta) { ta.focus(); ta.select(); }
+    showToast('Copy blocked here — text selected, press Copy');
+  },
+
+  async emailMatchText() {
+    const m = currentMatch;
+    const subject = `APA ${m.format === '9-ball' ? '9-ball' : '8-ball'} — ${m.homePlayer.name} vs ${m.awayPlayer.name}`;
+    await emailText(subject, formatMatchSummary(m));
+  },
+
+  // ── Report view: every match on one page ──
+  async renderReport() {
+    const all = await getAllMatches();
+    this._reportMatches = all.filter(m => m.status === 'completed')
+      .sort((a, b) => (b.completedAt || b.createdAt) - (a.completedAt || a.createdAt));
+
+    if (!this._reportRange) this._reportRange = 'all';
+    if (!this._reportSel) this._reportSel = new Set(this._reportMatches.map(m => m.id));
+
+    const range = this._reportRange;
+    const now = Date.now();
+    const inRange = this._reportMatches.filter(m => {
+      const ts = m.completedAt || m.createdAt || 0;
+      if (range === 'today') return new Date(ts).toDateString() === new Date(now).toDateString();
+      if (range === 'week') return (now - ts) < 7 * 86400000;
+      return true;
+    });
+    // Anything not in range cannot stay selected.
+    const idsInRange = new Set(inRange.map(m => m.id));
+    [...this._reportSel].forEach(id => { if (!idsInRange.has(id)) this._reportSel.delete(id); });
+
+    const rows = inRange.length ? inRange.map(m => {
+      const fs = m.finalScore || { home: 0, away: 0 };
+      const when = new Date(m.completedAt || m.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const result = m.winner ? `${m.winner === 'home' ? m.homePlayer.name : m.awayPlayer.name} won` : (m.forfeit ? 'forfeit' : 'no result');
+      const middle = m.forfeit ? 'forfeit' : `${fs.home}-${fs.away}`;
+      return `<div class="pick-row">
+        <input type="checkbox" ${this._reportSel.has(m.id) ? 'checked' : ''} onchange="ui.toggleReportMatch('${m.id}', this.checked)">
+        <div class="pick-main">
+          <div class="pick-title">${esc(m.homePlayer.name)} ${middle} ${esc(m.awayPlayer.name)}</div>
+          <div class="pick-sub">${m.format === '9-ball' ? '9-ball' : '8-ball'} · ${when} · ${esc(result)}</div>
+        </div>
+      </div>`;
+    }).join('') : '<p class="text-sm text-dim">No completed matches in this range.</p>';
+
+    $('report-content').innerHTML = `
+      <div class="card">
+        <div class="section-title" style="margin-top:0;">Include</div>
+        <div class="seg">
+          <button class="${range === 'today' ? 'active' : ''}" onclick="ui.setReportRange('today')">Today</button>
+          <button class="${range === 'week' ? 'active' : ''}" onclick="ui.setReportRange('week')">7 days</button>
+          <button class="${range === 'all' ? 'active' : ''}" onclick="ui.setReportRange('all')">All</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" style="font-size:0.8rem;padding:8px;" onclick="ui.selectAllReport(true)">Select all</button>
+          <button class="btn btn-secondary" style="font-size:0.8rem;padding:8px;" onclick="ui.selectAllReport(false)">Clear</button>
+        </div>
+        <div class="mt-8">${rows}</div>
+      </div>
+      <div class="card">
+        <div class="form-group">
+          <label>Report title</label>
+          <input type="text" id="report-label" value="${esc(this._reportLabel || 'APA MATCH SUMMARY')}" oninput="ui.setReportLabel(this.value)">
+        </div>
+        <textarea class="report-text" id="report-text" readonly></textarea>
+        <div class="btn-row mt-8">
+          <button class="btn btn-primary" onclick="ui.copyReport()">Copy</button>
+          <button class="btn btn-secondary" onclick="ui.emailReport()">Email</button>
+          <button class="btn btn-secondary" onclick="ui.shareReport()">Share</button>
+        </div>
+      </div>`;
+
+    this.refreshReportText();
+  },
+
+  selectedReportMatches() {
+    const sel = this._reportSel || new Set();
+    return (this._reportMatches || []).filter(m => sel.has(m.id));
+  },
+
+  buildReportText() {
+    return formatSessionSummary(this.selectedReportMatches(), {
+      label: this._reportLabel || 'APA MATCH SUMMARY',
+      generatedAt: Date.now()
+    });
+  },
+
+  refreshReportText() {
+    const ta = document.getElementById('report-text');
+    if (ta) ta.value = this.buildReportText();
+  },
+
+  setReportRange(range) {
+    this._reportRange = range;
+    // Switching range starts from "everything visible", which is what people expect.
+    this._reportSel = null;
+    this.renderReport();
+  },
+
+  toggleReportMatch(id, on) {
+    if (!this._reportSel) this._reportSel = new Set();
+    if (on) this._reportSel.add(id); else this._reportSel.delete(id);
+    this.refreshReportText();
+  },
+
+  selectAllReport(on) {
+    const now = Date.now();
+    const inRange = (this._reportMatches || []).filter(m => {
+      const ts = m.completedAt || m.createdAt || 0;
+      if (this._reportRange === 'today') return new Date(ts).toDateString() === new Date(now).toDateString();
+      if (this._reportRange === 'week') return (now - ts) < 7 * 86400000;
+      return true;
+    });
+    this._reportSel = new Set(on ? inRange.map(m => m.id) : []);
+    // Re-render to update the checkboxes.
+    this.renderReport();
+  },
+
+  setReportLabel(v) {
+    this._reportLabel = v;
+    this.refreshReportText();
+  },
+
+  async copyReport() {
+    const ok = await copyText(this.buildReportText());
+    if (ok) { showToast('Summary copied'); return; }
+    const ta = document.getElementById('report-text');
+    if (ta) { ta.focus(); ta.select(); }
+    showToast('Copy blocked here — text selected, press Copy');
+  },
+
+  async emailReport() {
+    await emailText(this._reportLabel || 'APA MATCH SUMMARY', this.buildReportText());
+  },
+
+  async shareReport() {
+    const text = this.buildReportText();
+    if (navigator.share) {
+      try { await navigator.share({ title: this._reportLabel || 'APA MATCH SUMMARY', text }); return; }
+      catch (e) { /* user cancelled */ }
+    }
+    const ok = await copyText(text);
+    showToast(ok ? 'Sharing not available — summary copied' : 'Could not share');
   },
 
   // ── Teams & Players ──
