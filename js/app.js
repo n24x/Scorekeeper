@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────────────────────────────
-const APP_VERSION = '1.9';
+const APP_VERSION = '1.10';
 let currentView = 'home';
 let currentMatch = null;
 let currentRack = null;
@@ -1861,6 +1861,34 @@ const ui = {
     if (sel) sel.value = size;
   },
 
+  /** Settings -> Reload app & clear cache. Unregisters the service worker,
+   *  deletes every cache, then reloads with a cache-busting query so the phone
+   *  gets the bytes that are actually on the server. */
+  async forceUpdate() {
+    showToast('Clearing cache and reloading…');
+    let cleared = 0;
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.unregister()));
+      }
+    } catch (e) { console.warn('service worker unregister failed', e); }
+    try {
+      if (window.caches) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+        cleared = keys.length;
+      }
+    } catch (e) { console.warn('cache delete failed', e); }
+
+    // Give the deletion a moment, then hard-reload past the HTTP cache too.
+    setTimeout(() => {
+      const url = new URL(location.href);
+      url.searchParams.set('fresh', Date.now().toString(36));
+      location.replace(url.toString());
+    }, 250);
+  },
+
   async setFontSize(size) {
     this.applyFontSize(size);
     await setSetting('fontSize', size);
@@ -1935,6 +1963,10 @@ async function init() {
     const size = await getSetting('fontSize', 'medium');
     ui.applyFontSize(size);
   } catch (e) { /* settings store may be unavailable on first run */ }
+  // Drop the ?fresh= marker the reload button adds, so the URL stays clean.
+  if (location.search.includes('fresh=')) {
+    try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
+  }
   const v = document.getElementById('app-version');
   if (v) v.textContent = APP_VERSION;
   ui.refreshMatchList();

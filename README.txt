@@ -1,7 +1,7 @@
 APA Scorekeeper - Offline Pool League Scoring App
 ===================================================
 
-Version: 1.9
+Version: 1.10
 By: Built for zappb44
 
 WHAT THIS APP DOES
@@ -29,6 +29,13 @@ FEATURES
 - Race chart reference (8-ball and 9-ball)
 - Works offline (PWA with service worker)
 - Installable to home screen
+
+NEW IN 1.10
+----------
+- Settings -> "Reload app & clear cache" works again. The button called a
+  function that did not exist, so nothing happened. It now unregisters the
+  service worker, deletes every cache, reloads past the HTTP cache with a
+  one-off query string, and tidies the URL afterwards.
 
 NEW IN 1.9
 ----------
