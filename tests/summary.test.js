@@ -77,13 +77,13 @@ test('contains format, table, players and score', () => {
 });
 test('rack log lists end types and stats', () => {
   const txt = Summary.formatMatchSummary(build8());
-  assert.match(txt, /1\. Alice · Break & Run/);
-  assert.match(txt, /· 3 inn/);
+  assert.match(txt, /1\. Alice won · Break & Run · 3 innings/);
+  assert.match(txt, /· 3 innings/);
 });
 test('9-ball summary shows points and dead balls', () => {
   const txt = Summary.formatMatchSummary(build9());
   assert.match(txt, /^9-BALL/m);
-  assert.match(txt, /1\. Carl · Standard Win · 4-1 pts · 1 dead/);
+  assert.match(txt, /1\. Carl won · Standard Win · 4-1 points · 1 dead · 4 innings/);
 });
 test('forfeited match is labelled, not given a fake score', () => {
   const m = build8();
@@ -91,6 +91,13 @@ test('forfeited match is labelled, not given a fake score', () => {
   const txt = Summary.formatMatchSummary(m);
   assert.match(txt, /forfeit/i);
   assert.match(txt, /Forfeit by Bob/);
+});
+
+test('a rack with zero innings still prints "0 innings"', () => {
+  const m = build8();
+  m.racks[1].innings = 0;
+  const txt = Summary.formatMatchSummary(m);
+  assert.match(txt, /2\. Alice won · Standard Win · 0 innings/);
 });
 
 console.log('session summary');

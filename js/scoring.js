@@ -212,7 +212,7 @@ function createRack(match, rackNumber) {
     // 9-ball: which balls were pocketed by whom
     balls: [],              // [{ number, pocketedBy: 'home'|'away', dead: false }]
     // 8-ball live picker
-    eightBalls: [],         // [{ number, pocketedBy: 'home'|'away'|null, dead: false }]
+    eightBalls: [],         // legacy: v1.x recorded 8-ball balls here; no longer used
     notes: '',
   };
 }

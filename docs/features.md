@@ -27,7 +27,8 @@ needs APA's servers/league account and will not be built.
 | Feature | Official app | This app | Status |
 | --- | --- | --- | --- |
 | Games Must Win race chart | Server-supplied `raceTo` | Local chart SL2–SL7 (+ SL8/9 for 9-ball) | Implemented |
-| Rack end types | Standard, 8-on-the-Break, 8-ball Break-and-Run, Early 8, Scratch on 8, Wrong pocket | Same set | Implemented |
+| Ball-by-ball entry | **Not used in 8-ball** — the official app asks who won and how | Removed in v1.3 (the 15-ball grid is gone) | Implemented |
+| Rack end types | Standard, 8-on-the-Break, 8-ball Break-and-Run, Early 8, Scratch on 8, Wrong pocket | Same set, asked in two steps (who won → how it ended) | Implemented |
 | Innings | Increment/decrement per rack | Increment/decrement per rack | Implemented |
 | Defensive shots | Per-player counters | Per-player counters | Implemented |
 | Time-outs | 1 per game for SL4+, 2 for SL2/SL3 | Same rule since v1.1 (was 1 for everyone) | Implemented |

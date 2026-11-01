@@ -1,7 +1,7 @@
 APA Scorekeeper - Offline Pool League Scoring App
 ===================================================
 
-Version: 1.2
+Version: 1.3
 By: Built for zappb44
 
 WHAT THIS APP DOES
@@ -29,6 +29,19 @@ FEATURES
 - Race chart reference (8-ball and 9-ball)
 - Works offline (PWA with service worker)
 - Installable to home screen
+
+NEW IN 1.3
+----------
+- 8-ball no longer asks you to mark individual balls. The official app does
+  not track balls in 8-ball either; it asks who won the rack and how it
+  ended. The 15-ball grid is gone.
+- Ending a rack is now two clear steps: "Who won the rack?" (player 1,
+  player 2, or no winner) and then "How did it end?" with only the endings
+  that make sense for that winner. Picking player 2 to win is now obvious.
+- The rack summary lists every rack with who won, how it ended, innings,
+  defensive shots and time-outs, e.g.
+    1. Player2 won - Standard Win - 3 innings
+- Cancelling an edit no longer reopens or changes the match.
 
 NEW IN 1.2 (outage fallback)
 ----------------------------

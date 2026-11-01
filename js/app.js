@@ -464,23 +464,8 @@ const ui = {
           `;
         }
 
-        // 8-ball: live ball picker with player toggle
-        if (m.format === '8-ball') {
-          if (!rack._eightBalls) rack._eightBalls = rack.eightBalls || [];
-          if (!rack._scorerSide) rack._scorerSide = 'home';
-          html += `
-          <div class="live-scorer">
-            <div class="section-title">8-Ball — Who Made Each Ball</div>
-            <div class="scorer-toggle">
-              <button class="btn ${rack._scorerSide === 'home' ? 'active' : 'btn-secondary'}" id="tog-home" onclick="ui.setScorerSide('home')">🏠 ${esc(m.homePlayer.name)}</button>
-              <button class="btn ${rack._scorerSide === 'away' ? 'active' : 'btn-secondary'}" id="tog-away" onclick="ui.setScorerSide('away')">👥 ${esc(m.awayPlayer.name)}</button>
-              <button class="btn ${rack._scorerSide === 'dead' ? 'active' : 'btn-secondary'}" id="tog-dead" onclick="ui.setScorerSide('dead')">💀 Dead</button>
-            </div>
-            <div class="ball-grid-15" id="live-eightball-grid"></div>
-            <div class="live-total" id="live-eightball-totals"></div>
-          </div>
-          `;
-        }
+        // 8-ball: no ball-by-ball entry. The official app only asks who won
+        // the rack and how it ended; individual balls are not recorded.
       }
 
       // Rack over banner (if current rack already has a winner, e.g. after modal close)
@@ -598,7 +583,6 @@ const ui = {
     // Render live ball grids after DOM is ready
     if (m.status === 'in_progress' && currentRack && !currentRack.winner) {
       if (m.format === '9-ball' && currentRack._balls !== undefined) this.renderLiveBallGrid();
-      if (m.format === '8-ball' && currentRack._eightBalls !== undefined) this.renderLiveEightBallGrid();
     }
 
     // Don't let the phone sleep mid-rack.
@@ -730,56 +714,6 @@ const ui = {
       <span class="side away">👥 ${esc(m.awayPlayer.name)}: ${awayPts} rack / ${prevAway + awayPts} tot</span>`;
   },
 
-  async pickEightBall(num) {
-    const rack = currentRack;
-    if (!rack || rack.winner) return;
-    const side = rack._scorerSide || 'home';
-    if (!rack._eightBalls) rack._eightBalls = [];
-    const existing = rack._eightBalls.find(b => b.number === num);
-    let next = side;
-    if (existing && existing.pocketedBy === side && !existing.dead) next = null;
-    rack._eightBalls = rack._eightBalls.filter(b => b.number !== num);
-    if (next) rack._eightBalls.push({ number: num, pocketedBy: side === 'dead' ? null : side, dead: side === 'dead' });
-    this.renderLiveEightBallGrid();
-    await saveMatch(currentMatch);
-  },
-
-  renderLiveEightBallGrid() {
-    const m = currentMatch;
-    const rack = currentRack;
-    if (!rack || !rack._eightBalls) return;
-    const grid = document.getElementById('live-eightball-grid');
-    const totals = document.getElementById('live-eightball-totals');
-    if (!grid) return;
-
-    const colors = {
-      1: '#fbbf24', 2: '#3b82f6', 3: '#ef4444', 4: '#9333ea', 5: '#f97316', 6: '#059669', 7: '#92400e',
-      8: '#1a1a1a', 9: '#fbbf24', 10: '#3b82f6', 11: '#ef4444', 12: '#9333ea', 13: '#f97316', 14: '#059669', 15: '#92400e'
-    };
-    let html = '';
-    for (let i = 1; i <= 15; i++) {
-      const ball = rack._eightBalls.find(b => b.number === i);
-      let cls = 'ball-xs';
-      let owner = '';
-      let style = `background:${colors[i]};border-color:${colors[i]};color:${i === 8 ? '#fff' : '#000'};`;
-      if (i === 8) style = 'background:#1a1a1a;border-color:#555;color:#fff;';
-      if (ball) {
-        if (ball.dead) cls += ' picked-dead';
-        else if (ball.pocketedBy === 'home') { cls += ' picked-home'; owner = '<span class="ball-owner">🏠</span>'; }
-        else if (ball.pocketedBy === 'away') { cls += ' picked-away'; owner = '<span class="ball-owner">👥</span>'; }
-      }
-      html += `<button class="${cls}" style="${style}" onclick="ui.pickEightBall(${i})">${i}${owner}</button>`;
-    }
-    grid.innerHTML = html;
-
-    const homeCount = rack._eightBalls.filter(b => !b.dead && b.pocketedBy === 'home').length;
-    const awayCount = rack._eightBalls.filter(b => !b.dead && b.pocketedBy === 'away').length;
-    const deadCount = rack._eightBalls.filter(b => b.dead).length;
-    totals.innerHTML = `<span class="side home">🏠 ${esc(m.homePlayer.name)}: ${homeCount}</span>
-      <span class="side away">👥 ${esc(m.awayPlayer.name)}: ${awayCount}</span>
-      <span class="side text-dim">💀 Dead: ${deadCount}</span>`;
-  },
-
   // ── Rack actions ──
   async startFirstRack() {
     const rack = startRack(currentMatch);
@@ -823,24 +757,29 @@ const ui = {
       if (m.format === '9-ball' && rack.balls && rack.balls.length > 0) {
         rack._balls = rack.balls.map(b => ({ number: b.number, pocketedBy: b.pocketedBy, dead: b.dead }));
       }
-      if (m.format === '8-ball' && rack.eightBalls && rack.eightBalls.length > 0) {
-        rack._eightBalls = rack.eightBalls.map(b => ({ number: b.number, pocketedBy: b.pocketedBy, dead: b.dead }));
-      }
-      rack._tempEndType = rack.endType;
-      rack.winner = null;
-      rack.endType = null;
-      rack.endedAt = null;
-      m.status = 'in_progress';
-      m.winner = null;
-      m.finalScore = null;
-      m.completedAt = null;
+
+      // Only remember the old values. Nothing is mutated until the user saves,
+      // so cancelling an edit leaves the match exactly as it was.
+      rack._wasWinner = rack.winner;
+      rack._prevEndType = rack.endType;
     }
 
-    // Helper to build an end-type button. type includes format prefix and side/winner.
-    const btn = (type, label, sub, cls='') => `<button class="endtype-btn ${cls}" onclick="ui.selectEndType('${type}')">${label}<br><small style="font-weight:400;">${sub}</small></button>`;
+    // Two steps, same order as the official app: who won, then how it ended.
+    this._endRackEditing = isEdit;
+    rack._tempWinner = isEdit ? (rack._wasWinner || null) : undefined;
+    rack._tempEndType = isEdit ? rack._prevEndType : undefined;
+    if (isEdit) this.showEndTypeStep();
+    else this.showWinnerStep();
+  },
+
+  /** Step 1 — who won the rack. */
+  showWinnerStep() {
+    const m = currentMatch;
+    const rack = currentRack;
+    const isEdit = this._endRackEditing;
 
     let html = `<div class="modal-title">${isEdit ? 'Edit' : 'End'} Rack ${rack.rackNumber} <span class="modal-close" onclick="closeModal()">×</span></div>`;
-    html += `<p class="text-sm text-dim mb-16">Tap an outcome. The winner is baked into the button.</p>`;
+    html += `<p class="text-sm text-dim mb-8">Who won the rack?</p>`;
     if (m.suddenDeath) {
       html += `<div class="card" style="box-shadow:none;background:var(--surface2);margin-bottom:12px;">
         <div class="text-sm" style="color:var(--yellow);">⚡ Sudden Death — ${m.format === '8-ball'
@@ -848,56 +787,74 @@ const ui = {
           : 'every ball counts <b>double</b>'}</div>
       </div>`;
     }
-
-    if (m.format === '8-ball') {
-      html += `<div class="form-group"><label>🏠 ${esc(m.homePlayer.name)} wins</label><div class="endtype-grid">` +
-        btn('home:STANDARD', '🎯 8-Ball Made', 'standard win') +
-        btn('home:EIGHT_ON_BREAK', '💥 8 on Break', 'on the break') +
-        btn('home:EIGHT_BREAK_AND_RUN', '🏃 Break & Run', 'ran out') +
-        `</div></div>`;
-      html += `<div class="form-group"><label>🏠 ${esc(m.homePlayer.name)} loses</label><div class="endtype-grid">` +
-        btn('away:STANDARD', '🎯 8-Ball Made by Away', 'away wins normally') +
-        btn('away:EIGHT_ON_BREAK', '💥 Away 8 on Break', 'away made on break') +
-        btn('away:EIGHT_BREAK_AND_RUN', '🏃 Away Break & Run', 'away ran out') +
-        btn('away:EIGHT_EARLY', '⏰ Home Early 8', 'home sank 8 early → away wins') +
-        btn('away:SCRATCH_ON_EIGHT', '🔲 Home Scratch on 8', 'home scratched → away wins') +
-        btn('away:WRONG_POCKET', '❌ Home Wrong Pocket', 'home wrong pocket → away wins') +
-        `</div></div>`;
-      html += `<div class="form-group"><label>👥 ${esc(m.awayPlayer.name)} loses</label><div class="endtype-grid">` +
-        btn('home:EIGHT_EARLY', '⏰ Away Early 8', 'away sank 8 early → home wins') +
-        btn('home:SCRATCH_ON_EIGHT', '🔲 Away Scratch on 8', 'away scratched → home wins') +
-        btn('home:WRONG_POCKET', '❌ Away Wrong Pocket', 'away wrong pocket → home wins') +
-        `</div></div>`;
-      html += `<div class="form-group"><label>No winner</label><div class="endtype-grid">` +
-        btn('null:STALEMATE', '🤝 Stalemate', 're-rack') +
-        `</div></div>`;
-    } else {
-      html += `<div class="form-group"><label>🏠 ${esc(m.homePlayer.name)} wins</label><div class="endtype-grid">` +
-        btn('home:STANDARD', '🎯 9-ball Made', 'standard win') +
-        btn('home:NINE_ON_SNAP', '💥 9 on Snap', 'on the break') +
-        btn('home:NINE_BREAK_AND_RUN', '🏃 Break & Run', 'home runs out') +
-        `</div></div>`;
-      html += `<div class="form-group"><label>👥 ${esc(m.awayPlayer.name)} wins</label><div class="endtype-grid">` +
-        btn('away:STANDARD', '🎯 9-ball Made', 'standard win') +
-        btn('away:NINE_ON_SNAP', '💥 9 on Snap', 'on the break') +
-        btn('away:NINE_BREAK_AND_RUN', '🏃 Break & Run', 'away runs out') +
-        `</div></div>`;
-      html += `<div class="form-group"><label>No winner</label><div class="endtype-grid">` +
-        btn('null:STALEMATE', '🤝 Stalemate', 're-rack') +
-        `</div></div>`;
-    }
-
-    html += `<div class="mt-16"><button class="btn btn-primary" onclick="ui.submitEndRack('${m.format}')">${isEdit ? 'Save Changes' : 'End Rack'}</button></div><div style="height:20px;"></div>`;
+    html += `<button class="btn btn-primary" style="margin-bottom:8px;" onclick="ui.pickRackWinner('home')">🏠 ${esc(m.homePlayer.name)}</button>
+      <button class="btn btn-primary" style="margin-bottom:8px;" onclick="ui.pickRackWinner('away')">👥 ${esc(m.awayPlayer.name)}</button>
+      <button class="btn btn-secondary" onclick="ui.pickRackWinner('null')">No winner / rack abandoned</button>
+      <div style="height:20px;"></div>`;
     showModal(html);
   },
 
-  selectEndType(type) {
+  pickRackWinner(side) {
     if (!currentRack) return;
-    const [winner, endType] = type.split(':');
-    currentRack._tempWinner = winner === 'null' ? null : winner;
+    currentRack._tempWinner = side === 'null' ? null : side;
+    currentRack._tempEndType = undefined;
+    this.showEndTypeStep();
+  },
+
+  /** Step 2 — how the rack ended, filtered by who won. */
+  endTypeOptions(winner) {
+    const m = currentMatch;
+    const home = m.homePlayer.name;
+    const away = m.awayPlayer.name;
+    const winnerName = winner === 'home' ? home : away;
+    const loserName = winner === 'home' ? away : home;
+
+    if (winner === 'home' || winner === 'away') {
+      if (m.format === '8-ball') {
+        return [
+          { type: 'STANDARD', label: `🎯 ${winnerName} made the 8-ball`, sub: 'standard win' },
+          { type: 'EIGHT_BREAK_AND_RUN', label: '🏃 Break & Run', sub: `${winnerName} ran the rack` },
+          { type: 'EIGHT_ON_BREAK', label: '💥 8 on the break', sub: `${winnerName} made it on the break` },
+          { type: 'EIGHT_EARLY', label: `⏰ ${loserName} made the 8 early`, sub: `${winnerName} wins` },
+          { type: 'SCRATCH_ON_EIGHT', label: `🔲 ${loserName} scratched on the 8`, sub: `${winnerName} wins` },
+          { type: 'WRONG_POCKET', label: `❌ ${loserName} put the 8 in the wrong pocket`, sub: `${winnerName} wins` }
+        ];
+      }
+      return [
+        { type: 'STANDARD', label: `🎯 ${winnerName} made the 9`, sub: 'standard win' },
+        { type: 'NINE_ON_SNAP', label: '💥 9 on the snap', sub: 'made on the break' },
+        { type: 'NINE_BREAK_AND_RUN', label: '🏃 Break & Run', sub: `${winnerName} ran out` }
+      ];
+    }
+    return [
+      { type: 'STALEMATE', label: '🤝 Stalemate', sub: 'rack replayed, balls are dead' },
+      { type: 'END_RACK_EARLY', label: '⏹ End rack early', sub: 'scores stay as they are' }
+    ];
+  },
+
+  showEndTypeStep() {
+    const m = currentMatch;
+    const rack = currentRack;
+    const winner = rack._tempWinner;
+    const opts = this.endTypeOptions(winner);
+    const who = winner === null ? 'No winner' : `${winner === 'home' ? m.homePlayer.name : m.awayPlayer.name} won`;
+
+    let html = `<div class="modal-title">How did rack ${rack.rackNumber} end?</div>
+      <p class="text-sm text-dim mb-8">${esc(who)}</p>
+      <div class="endtype-grid">` +
+      opts.map(o => `<button class="endtype-btn${rack._tempEndType === o.type ? ' selected' : ''}" onclick="ui.selectEndType('${o.type}', this)">${esc(o.label)}<br><small style="font-weight:400;">${esc(o.sub)}</small></button>`).join('') +
+      `</div>
+      <div class="mt-16"><button class="btn btn-primary" onclick="ui.submitEndRack('${m.format}')">${this._endRackEditing ? 'Save Changes' : 'Save Rack'}</button></div>
+      <div class="mt-8"><button class="btn btn-secondary" onclick="ui.showWinnerStep()">← Change winner</button></div>
+      <div style="height:16px;"></div>`;
+    showModal(html);
+  },
+
+  selectEndType(endType, el) {
+    if (!currentRack) return;
     currentRack._tempEndType = endType;
     document.querySelectorAll('.endtype-btn').forEach(b => b.classList.remove('selected'));
-    event.target.closest('.endtype-btn').classList.add('selected');
+    if (el) el.classList.add('selected');
   },
 
   async submitEndRack(format) {
@@ -925,12 +882,9 @@ const ui = {
         dead: b.dead || false
       }));
     } else {
+      // 8-ball has no ball-level data in APA scoresheets.
       rack.balls = [];
-      rack.eightBalls = (rack._eightBalls || []).map(b => ({
-        number: b.number,
-        pocketedBy: b.pocketedBy || null,
-        dead: b.dead || false
-      }));
+      rack.eightBalls = [];
     }
 
     endRack(m, rack, endType, winner);
@@ -938,7 +892,6 @@ const ui = {
     delete rack._tempWinner;
     delete rack._tempEndType;
     delete rack._balls;
-    delete rack._eightBalls;
     delete rack._scorerSide;
 
     await saveMatch(m);
@@ -973,12 +926,6 @@ const ui = {
           html += `<div class="stat-row"><span class="stat-label">Ball ${b.number}${b.dead ? ' (Dead)' : ''}</span><span class="stat-value">${b.pocketedBy === 'home' ? esc(m.homePlayer.name) : b.pocketedBy === 'away' ? esc(m.awayPlayer.name) : 'Dead'}</span></div>`;
         });
       }
-    }
-    if (m.format === '8-ball' && rack.eightBalls && rack.eightBalls.length > 0) {
-      html += '<div class="section-title">Balls Pocketed</div>';
-      rack.eightBalls.forEach(b => {
-        html += `<div class="stat-row"><span class="stat-label">Ball ${b.number}${b.dead ? ' (Dead)' : ''}</span><span class="stat-value">${b.pocketedBy === 'home' ? esc(m.homePlayer.name) : b.pocketedBy === 'away' ? esc(m.awayPlayer.name) : 'Dead'}</span></div>`;
-      });
     }
     html += `<div class="stat-row"><span class="stat-label">${esc(m.homePlayer.name)} Defensive Shots</span><span class="stat-value">${rack.homeDefensiveShots || 0}</span></div>
       <div class="stat-row"><span class="stat-label">${esc(m.awayPlayer.name)} Defensive Shots</span><span class="stat-value">${rack.awayDefensiveShots || 0}</span></div>

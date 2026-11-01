@@ -33,20 +33,35 @@ function scoreLine(match) {
   return `${h.name} (SL${h.skillLevel}) ${fs.home} - ${fs.away} ${a.name} (SL${a.skillLevel})`;
 }
 
+/**
+ * One rack, on one line: who won, how it ended, and every stat recorded for it.
+ * Innings are always printed (0 is meaningful), the rest only when non-zero.
+ */
 function rackLine(match, rack) {
   const winnerName = rack.winner === 'home' ? match.homePlayer.name
-    : rack.winner === 'away' ? match.awayPlayer.name : '—';
+    : rack.winner === 'away' ? match.awayPlayer.name : null;
   const label = (typeof RACK_END_LABELS !== 'undefined' && RACK_END_LABELS[rack.endType]) || rack.endType || '';
-  let line = `${rack.rackNumber}. ${winnerName} · ${label}`;
+  const innings = rack.innings || 0;
+
+  const bits = [winnerName ? `${winnerName} won` : 'No winner'];
+  if (label) bits.push(label);
   if (match.format === '9-ball') {
-    line += ` · ${rack.homeBallPoints || 0}-${rack.awayBallPoints || 0} pts`;
-    if (rack.deadBalls) line += ` · ${rack.deadBalls} dead`;
+    bits.push(`${rack.homeBallPoints || 0}-${rack.awayBallPoints || 0} points`);
+    if (rack.deadBalls) bits.push(`${rack.deadBalls} dead`);
   }
-  if (rack.innings) line += ` · ${rack.innings} inn`;
-  const to = (rack.homeTimeouts || 0) + (rack.awayTimeouts || 0);
-  if (to) line += ` · ${to} TO`;
-  if (rack.sdPoints) line += ` · SD ${rack.sdPoints} pt`;
-  return line;
+  bits.push(`${innings} inning${innings === 1 ? '' : 's'}`);
+
+  const hDef = rack.homeDefensiveShots || 0;
+  const aDef = rack.awayDefensiveShots || 0;
+  if (hDef || aDef) bits.push(`defensive ${hDef}/${aDef}`);
+
+  const hTO = rack.homeTimeouts || 0;
+  const aTO = rack.awayTimeouts || 0;
+  if (hTO || aTO) bits.push(`time-outs ${hTO}/${aTO}`);
+
+  if (rack.sdPoints) bits.push(`Sudden Death ${rack.sdPoints} pt`);
+
+  return `${rack.rackNumber}. ` + bits.join(' · ');
 }
 
 // ── one match ────────────────────────────────────────────────────────
