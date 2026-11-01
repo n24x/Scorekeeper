@@ -183,6 +183,12 @@ function formatSessionSummary(matches, opts) {
     }
     n++;
     lines.push(`${n}. ${matchOneLiner(m)}`);
+    // Rack-by-rack detail: who won each rack and how many innings it took.
+    if (o.includeRacks !== false) {
+      m.racks.forEach(r => {
+        lines.push('     ' + rackLine(m, r).replace(/^\d+\. /, `R${r.rackNumber}: `));
+      });
+    }
   });
 
   lines.push('');

@@ -115,6 +115,15 @@ test('session groups by day and totals every match', () => {
   assert.match(txt, /TOTALS/);
   assert.match(txt, /Matches 2 · Racks 8/);
 });
+test('session report carries the rack breakdown', () => {
+  const txt = Summary.formatSessionSummary([build8()]);
+  assert.match(txt, /R1: Alice won · Break & Run · 3 innings/);
+  assert.match(txt, /R6: Bob won · Standard Win · 0 innings/);
+});
+test('rack detail can be switched off', () => {
+  const txt = Summary.formatSessionSummary([build8()], { includeRacks: false });
+  assert.doesNotMatch(txt, /R1:/);
+});
 test('session totals are summed correctly', () => {
   const t = Summary.sessionTotals([build8(), build9()]);
   assert.strictEqual(t.matches, 2);

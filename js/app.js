@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────────────────────────────
+const APP_VERSION = '1.4';
 let currentView = 'home';
 let currentMatch = null;
 let currentRack = null;
@@ -1146,6 +1147,10 @@ const ui = {
           <label>Report title</label>
           <input type="text" id="report-label" value="${esc(this._reportLabel || 'APA MATCH SUMMARY')}" oninput="ui.setReportLabel(this.value)">
         </div>
+        <label style="display:flex;align-items:center;gap:10px;margin-bottom:12px;color:var(--text);text-transform:none;letter-spacing:0;">
+          <input type="checkbox" id="report-racks" ${this._reportRacks !== false ? 'checked' : ''} onchange="ui.setReportRacks(this.checked)" style="width:20px;height:20px;accent-color:var(--primary);">
+          <span class="text-sm">Rack-by-rack detail (who won each rack + innings)</span>
+        </label>
         <textarea class="report-text" id="report-text" readonly></textarea>
         <div class="btn-row mt-8">
           <button class="btn btn-primary" onclick="ui.copyReport()">Copy</button>
@@ -1165,8 +1170,14 @@ const ui = {
   buildReportText() {
     return formatSessionSummary(this.selectedReportMatches(), {
       label: this._reportLabel || 'APA MATCH SUMMARY',
-      generatedAt: Date.now()
+      generatedAt: Date.now(),
+      includeRacks: this._reportRacks !== false
     });
+  },
+
+  setReportRacks(on) {
+    this._reportRacks = on;
+    this.refreshReportText();
   },
 
   refreshReportText() {
@@ -1434,6 +1445,19 @@ const ui = {
   },
 
   // ── Display / device ──
+  /** Wipe the service worker + caches and reload. This is the escape hatch
+   *  when a phone keeps showing an old build. */
+  async forceUpdate() {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) await r.unregister();
+      const keys = await caches.keys();
+      for (const k of keys) await caches.delete(k);
+    } catch (e) { /* private mode, etc. */ }
+    location.reload();
+  },
+
+
   applyFontSize(size) {
     const map = { small: '14px', medium: '16px', large: '18px', xlarge: '20px' };
     document.documentElement.style.fontSize = map[size] || '16px';
@@ -1515,6 +1539,8 @@ async function init() {
     const size = await getSetting('fontSize', 'medium');
     ui.applyFontSize(size);
   } catch (e) { /* settings store may be unavailable on first run */ }
+  const v = document.getElementById('app-version');
+  if (v) v.textContent = APP_VERSION;
   ui.refreshMatchList();
 }
 
